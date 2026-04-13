@@ -54,7 +54,7 @@ class Conversation extends Model
     {
         static::creating(function (Conversation $conversation) {
             if (! $conversation->window_expires_at) {
-                $conversation->window_expires_at = now()->addHours(24);
+                $conversation->window_expires_at = null;
             }
         });
     }

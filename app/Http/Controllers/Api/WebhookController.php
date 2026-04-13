@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\NewMessageReceived;
 use App\Http\Controllers\Controller;
 use App\Models\Contact;
 use App\Models\Conversation;
@@ -14,6 +15,26 @@ use Illuminate\Support\Facades\Log;
 class WebhookController extends Controller
 {
     public function __construct(private MetaWhatsAppService $metaService) {}
+
+    private function isValidSignature(Request $request): bool
+    {
+        $settings = $this->metaService->getSettings();
+        $secret = $settings?->app_secret;
+
+        // If no app secret is configured, don't block webhooks.
+        if (! $secret) {
+            return true;
+        }
+
+        $signature = $request->header('X-Hub-Signature-256');
+        if (! $signature || ! str_starts_with($signature, 'sha256=')) {
+            return false;
+        }
+
+        $expected = 'sha256='.hash_hmac('sha256', $request->getContent(), $secret);
+
+        return hash_equals($expected, $signature);
+    }
 
     public function verify(Request $request)
     {
@@ -40,6 +61,18 @@ class WebhookController extends Controller
 
     public function handle(Request $request)
     {
+        if (! $this->isValidSignature($request)) {
+            WebhookLog::create([
+                'event_type' => 'webhook_signature_invalid',
+                'direction' => 'inbound',
+                'from_number' => $request->ip(),
+                'payload' => $request->headers->all(),
+                'http_status' => 403,
+            ]);
+
+            return response()->json(['error' => 'Invalid webhook signature'], 403);
+        }
+
         $payload = $request->all();
         Log::info('WhatsApp Webhook received:', $payload);
 
@@ -108,6 +141,7 @@ class WebhookController extends Controller
         $phoneNumber = $msg['from'];
         $waId = $msg['id'];
         $timestamp = isset($msg['timestamp']) ? now()->createFromTimestamp((int) $msg['timestamp']) : now();
+        $expiresAt = $timestamp->copy()->addHours(24);
 
         $contact = Contact::firstOrCreate(
             ['phone_number' => $phoneNumber],
@@ -118,13 +152,13 @@ class WebhookController extends Controller
             ['contact_id' => $contact->id],
             [
                 'wa_conversation_id' => $waId,
-                'window_expires_at' => $timestamp->addHours(24),
+                'window_expires_at' => $expiresAt,
             ]
         );
 
         $conversation->update([
             'last_message_at' => $timestamp,
-            'window_expires_at' => $timestamp->addHours(24),
+            'window_expires_at' => $expiresAt,
         ]);
 
         $type = 'text';
@@ -151,7 +185,7 @@ class WebhookController extends Controller
             $mediaUrl = $msg['document']['mime_type'] ?? null;
         }
 
-        Message::create([
+        $message = Message::create([
             'conversation_id' => $conversation->id,
             'contact_id' => $contact->id,
             'meta_message_id' => $waId,
@@ -163,6 +197,8 @@ class WebhookController extends Controller
             'status' => 'received',
             'sent_at' => $timestamp,
         ]);
+
+        event(new NewMessageReceived($message));
     }
 
     private function handleStatusUpdate(array $status): void
