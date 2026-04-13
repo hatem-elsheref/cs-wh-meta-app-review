@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\Log;
  */
 class OrderTrackingService
 {
+    private const DEFAULT_TRACKING_BASE = 'https://portal.isnaad.sa/api/order-tracking';
+
     /**
      * Primary tracking by order number (digits only, per API path).
      *
@@ -30,9 +32,9 @@ class OrderTrackingService
             ];
         }
 
-        $base = (string) config('services.isnaad.order_tracking_base_url', '');
+        $base = rtrim((string) config('services.isnaad.order_tracking_base_url', ''), '/');
         if ($base === '') {
-            return $this->serviceUnavailable();
+            $base = rtrim(self::DEFAULT_TRACKING_BASE, '/');
         }
 
         $requestUrl = $base.'/'.$orderNumber;
@@ -47,7 +49,13 @@ class OrderTrackingService
                 'error' => $e->getMessage(),
             ]);
 
-            return $this->serviceUnavailable();
+            return [
+                'ok' => false,
+                'res_ar' => 'تعذر الاتصال بخدمة التتبع حالياً. حاول لاحقاً أو تواصل مع الدعم.',
+                'res_en' => 'We could not reach the tracking service. Please try again later or contact support.',
+                'tracking_url' => null,
+                'tracking_status' => 'request_failed',
+            ];
         }
 
         if (! $response->successful()) {
@@ -138,20 +146,6 @@ class OrderTrackingService
                 'tracking_status' => $status !== '' ? $status : 'unknown',
             ],
         };
-    }
-
-    /**
-     * @return array{ok: bool, res_ar: string, res_en: string, tracking_url: null, tracking_status: string}
-     */
-    private function serviceUnavailable(): array
-    {
-        return [
-            'ok' => false,
-            'res_ar' => 'خدمة التتبع غير مهيأة على الخادم. يرجى التواصل مع الدعم.',
-            'res_en' => 'Tracking is not configured on this server. Please contact support.',
-            'tracking_url' => null,
-            'tracking_status' => 'unconfigured',
-        ];
     }
 
     /**
