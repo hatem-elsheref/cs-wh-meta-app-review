@@ -35,4 +35,15 @@ return [
         ],
     ],
 
+    /*
+    | Isnaad portal: GET {base_url}/{order_number}
+    | Example: https://portal.isnaad.sa/api/order-tracking/2062380
+    */
+    'isnaad' => [
+        'order_tracking_base_url' => rtrim((string) env(
+            'ISNAAD_ORDER_TRACKING_BASE_URL',
+            'https://portal.isnaad.sa/api/order-tracking'
+        ), '/'),
+    ],
+
 ];

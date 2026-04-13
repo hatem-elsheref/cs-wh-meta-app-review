@@ -45,23 +45,27 @@ class FlowEngine
             $state->save();
         }
 
-        if ($state->mode === 'manual') {
-            return;
-        }
-
         $text = trim((string) Arr::get($incoming, 'text', Arr::get($incoming, 'content', '')));
-        $history = $state->message_history ?? [];
-        $history[] = ['role' => 'user', 'content' => $text, 'timestamp' => now()->toISOString()];
-        $state->message_history = array_slice($history, -40);
-        $state->save();
 
-        // SwitchMode trigger words (scan flow for manual switch nodes).
-        if ($text !== '' && $this->matchesTriggerWords($flow, $text)) {
-            $state->mode = 'manual';
-            $state->mode_revert_at = null;
-            $state->save();
-            return;
+        $skipHistoryAppend = false;
+        if ($state->mode === 'manual') {
+            if ($text !== '' && $this->matchesManualModeResumeWords($flow, $text)) {
+                $this->resetAutomationSession($state, $flow);
+                $skipHistoryAppend = true;
+            } else {
+                return;
+            }
         }
+
+        if (! $skipHistoryAppend) {
+            $history = $state->message_history ?? [];
+            $history[] = ['role' => 'user', 'content' => $text, 'timestamp' => now()->toISOString()];
+            $state->message_history = array_slice($history, -40);
+            $state->save();
+        }
+
+        // Manual mode is only entered via the flow (e.g. customer-care switch_mode node), not by free-text keywords,
+        // so words like "stop" can safely mean "resume automation" while in manual.
 
         // Rating capture.
         if ($this->tryCaptureRating($state, $text)) {
@@ -447,7 +451,7 @@ class FlowEngine
 
                     $result = $this->executeSystemFunction($fn, $state->variables ?? [], (string) $state->phone);
                     $vars = $state->variables ?? [];
-                    foreach (['res_ar', 'res_en', 'account_id', 'order_number', 'tracking'] as $k) {
+                    foreach (['res_ar', 'res_en', 'account_id', 'order_number', 'tracking', 'tracking_url', 'tracking_status'] as $k) {
                         if (array_key_exists($k, $result)) {
                             $vars[$k] = $result[$k];
                         }
@@ -470,12 +474,13 @@ class FlowEngine
 
                 case 'loop_goto': {
                     $target = (string) ($data['targetNodeId'] ?? '');
-                    if ($target !== '') {
-                        $state->current_node_id = $target;
-                        $state->save();
+                    if ($target === '') {
+                        return;
                     }
-                    // Stop; resume on next incoming message.
-                    return;
+                    $state->current_node_id = $target;
+                    $state->save();
+                    // Continue the run loop so the target node executes in the same turn (e.g. show language picker).
+                    continue 2;
                 }
 
                 case 'rate_service_template': {
@@ -512,26 +517,62 @@ class FlowEngine
         }
     }
 
-    private function matchesTriggerWords(Flow $flow, string $text): bool
+    /**
+     * When in manual / human-handoff mode, substring-match against these phrases always resumes automation
+     * (so "close", "cancel", etc. work even if the flow JSON omits triggerWords).
+     *
+     * @var list<string>
+     */
+    private const DEFAULT_MANUAL_RESUME_SUBSTRINGS = [
+        'close', 'closed', 'closing', 'cancel', 'cancelled', 'cancellation',
+        'stop', 'stopped', 'quit', 'exit', 'done', 'dismiss', 'resolved', 'goodbye', 'bye',
+        'إغلاق', 'اغلاق', 'إلغاء', 'الغاء', 'انهاء', 'إنهاء', 'أوقف', 'وقف',
+    ];
+
+    /**
+     * Manual resume: built-in cancel/close phrases plus comma-separated triggerWords on switch_mode(manual) nodes.
+     */
+    private function matchesManualModeResumeWords(Flow $flow, string $text): bool
     {
+        $t = mb_strtolower($text);
+        foreach (self::DEFAULT_MANUAL_RESUME_SUBSTRINGS as $w) {
+            if (str_contains($t, mb_strtolower($w))) {
+                return true;
+            }
+        }
+
         $nodes = $flow->nodes_json ?? [];
-        $words = [];
         foreach ($nodes as $n) {
-            if (($n['type'] ?? null) !== 'switch_mode') continue;
+            if (($n['type'] ?? null) !== 'switch_mode') {
+                continue;
+            }
             $data = $n['data'] ?? [];
-            if (($data['mode'] ?? null) !== 'manual') continue;
+            if (($data['mode'] ?? null) !== 'manual') {
+                continue;
+            }
             $raw = (string) ($data['triggerWords'] ?? '');
             foreach (explode(',', $raw) as $w) {
                 $w = trim(mb_strtolower($w));
-                if ($w !== '') $words[] = $w;
+                if ($w !== '' && str_contains($t, $w)) {
+                    return true;
+                }
             }
         }
-        if (empty($words)) return false;
-        $t = mb_strtolower($text);
-        foreach ($words as $w) {
-            if ($w !== '' && str_contains($t, $w)) return true;
-        }
+
         return false;
+    }
+
+    private function resetAutomationSession(ConversationState $state, Flow $flow): void
+    {
+        $state->mode = 'auto';
+        $state->mode_revert_at = null;
+        $state->current_node_id = $this->getStartNodeId($flow) ?? 'start';
+        $state->awaiting_input = null;
+        $state->rating_pending = null;
+        $state->variables = [];
+        $state->message_history = [];
+        $state->session_started_at = now();
+        $state->save();
     }
 
     private function resumeIfAwaiting(Flow $flow, ConversationState $state, array $incoming, string $text): bool

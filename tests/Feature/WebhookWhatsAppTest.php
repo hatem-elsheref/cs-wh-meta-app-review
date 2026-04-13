@@ -141,4 +141,54 @@ class WebhookWhatsAppTest extends TestCase
 
         Event::assertDispatched(NewMessageReceived::class);
     }
+
+    public function test_post_syncs_profile_name_from_contacts_payload(): void
+    {
+        Event::fake([NewMessageReceived::class]);
+        $this->metaSettingsRow(['app_secret' => 'top_secret']);
+
+        $payload = [
+            'entry' => [[
+                'changes' => [[
+                    'value' => [
+                        'metadata' => ['display_phone_number' => '+1'],
+                        'contacts' => [[
+                            'profile' => ['name' => 'Jane Customer'],
+                            'wa_id' => '15559876543',
+                        ]],
+                        'messages' => [[
+                            'from' => '15559876543',
+                            'id' => 'wamid.PROFILETEST',
+                            'timestamp' => (string) now()->timestamp,
+                            'type' => 'text',
+                            'text' => ['body' => 'Hi'],
+                        ]],
+                    ],
+                ]],
+            ]],
+        ];
+
+        $body = json_encode($payload);
+        $sig = 'sha256='.hash_hmac('sha256', $body, 'top_secret');
+
+        $response = $this->call(
+            'POST',
+            '/api/webhook/whatsapp',
+            [],
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_HUB_SIGNATURE_256' => $sig,
+            ],
+            $body
+        );
+
+        $response->assertOk();
+
+        $contact = Contact::where('phone_number', '15559876543')->first();
+        $this->assertNotNull($contact);
+        $this->assertSame('Jane Customer', $contact->profile_name);
+        $this->assertSame('Jane Customer', $contact->name);
+    }
 }

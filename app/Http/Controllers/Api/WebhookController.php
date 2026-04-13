@@ -101,7 +101,7 @@ class WebhookController extends Controller
 
         if (isset($value['messages'])) {
             foreach ($value['messages'] as $msg) {
-                $this->handleIncomingMessage($value['metadata'], $msg);
+                $this->handleIncomingMessage($value, $msg);
                 WebhookLog::create([
                     'event_type' => 'message_received',
                     'direction' => 'inbound',
@@ -141,7 +141,7 @@ class WebhookController extends Controller
         }
     }
 
-    private function handleIncomingMessage(array $metadata, array $msg): void
+    private function handleIncomingMessage(array $value, array $msg): void
     {
         $phoneNumber = $msg['from'];
         $waId = $msg['id'];
@@ -152,6 +152,15 @@ class WebhookController extends Controller
             ['phone_number' => $phoneNumber],
             ['wa_id' => $waId]
         );
+
+        $profileName = $this->extractWhatsAppProfileName($value['contacts'] ?? [], $phoneNumber);
+        if ($profileName !== null) {
+            $updates = ['profile_name' => $profileName];
+            if (! $contact->name) {
+                $updates['name'] = $profileName;
+            }
+            $contact->update($updates);
+        }
 
         $conversation = Conversation::firstOrCreate(
             ['contact_id' => $contact->id],
@@ -239,6 +248,34 @@ class WebhookController extends Controller
             'interactive' => $interactivePayload,
             'timestamp' => $timestamp->toISOString(),
         ]);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $contacts
+     */
+    private function extractWhatsAppProfileName(array $contacts, string $phoneNumber): ?string
+    {
+        $digits = preg_replace('/\D+/', '', $phoneNumber) ?? '';
+        if ($digits === '') {
+            return null;
+        }
+
+        foreach ($contacts as $entry) {
+            $waId = isset($entry['wa_id']) ? (string) $entry['wa_id'] : '';
+            $entryDigits = preg_replace('/\D+/', '', $waId) ?? '';
+            if ($entryDigits !== $digits) {
+                continue;
+            }
+
+            $name = $entry['profile']['name'] ?? null;
+            if (is_string($name)) {
+                $trimmed = trim($name);
+
+                return $trimmed !== '' ? $trimmed : null;
+            }
+        }
+
+        return null;
     }
 
     private function handleStatusUpdate(array $status): void

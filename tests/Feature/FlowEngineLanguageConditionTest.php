@@ -105,4 +105,84 @@ class FlowEngineLanguageConditionTest extends TestCase
 
         $this->assertSame(['15550002', 'AR_OK'], $sent);
     }
+
+    public function test_loop_goto_runs_target_interactive_in_same_turn(): void
+    {
+        $interactiveSent = null;
+        $mock = Mockery::mock(MetaWhatsAppService::class);
+        $mock->shouldReceive('sendInteractive')->once()->withArgs(function ($phone, $payload) use (&$interactiveSent) {
+            $interactiveSent = [$phone, $payload];
+
+            return true;
+        });
+        $this->app->instance(MetaWhatsAppService::class, $mock);
+
+        $flow = Flow::create([
+            'nodes_json' => [
+                ['id' => 'start', 'type' => 'start', 'position' => ['x' => 0, 'y' => 0], 'data' => ['welcomeText' => '']],
+                ['id' => 'menu', 'type' => 'interactive_menu', 'position' => ['x' => 0, 'y' => 0], 'data' => [
+                    'mode' => 'list',
+                    'headerText' => '',
+                    'bodyText' => 'Menu',
+                    'buttonLabel' => 'Open',
+                    'saveSelectionAs' => '',
+                    'sections' => [[
+                        'title' => 'S',
+                        'rows' => [['id' => 'opt_lang', 'title' => 'Change language', 'description' => '']],
+                    ]],
+                    'buttons' => [],
+                ]],
+                ['id' => 'goto_lang', 'type' => 'loop_goto', 'position' => ['x' => 0, 'y' => 0], 'data' => ['targetNodeId' => 'pick_lang']],
+                ['id' => 'pick_lang', 'type' => 'interactive_menu', 'position' => ['x' => 0, 'y' => 0], 'data' => [
+                    'mode' => 'buttons',
+                    'headerText' => '',
+                    'bodyText' => 'Choose your language',
+                    'buttonLabel' => '',
+                    'saveSelectionAs' => '',
+                    'sections' => [],
+                    'buttons' => [
+                        ['id' => 'lang_ar', 'title' => 'AR'],
+                    ],
+                ]],
+            ],
+            'edges_json' => [
+                ['id' => 'e1', 'source' => 'start', 'target' => 'menu', 'sourceHandle' => 'begin', 'targetHandle' => null],
+                ['id' => 'e2', 'source' => 'menu', 'target' => 'goto_lang', 'sourceHandle' => 'row:opt_lang', 'targetHandle' => null],
+            ],
+        ]);
+
+        ConversationState::create([
+            'phone' => '15550003',
+            'flow_id' => $flow->id,
+            'current_node_id' => 'menu',
+            'mode' => 'auto',
+            'language' => 'EN',
+            'variables' => [],
+            'message_history' => [],
+            'session_started_at' => now(),
+            'awaiting_input' => [
+                'kind' => 'interactive',
+                'nodeId' => 'menu',
+                'mode' => 'list',
+            ],
+        ]);
+
+        app(FlowEngine::class)->processIncoming('15550003', [
+            'content' => 'Change language',
+            'interactive' => [
+                'type' => 'list_reply',
+                'list_reply' => ['id' => 'opt_lang', 'title' => 'Change language'],
+            ],
+        ]);
+
+        $this->assertNotNull($interactiveSent);
+        $this->assertSame('15550003', $interactiveSent[0]);
+        $this->assertSame('button', $interactiveSent[1]['type']);
+        $this->assertSame('Choose your language', $interactiveSent[1]['body']['text']);
+
+        $state = ConversationState::where('phone', '15550003')->first();
+        $this->assertSame('pick_lang', $state->current_node_id);
+        $this->assertIsArray($state->awaiting_input);
+        $this->assertSame('interactive', $state->awaiting_input['kind']);
+    }
 }

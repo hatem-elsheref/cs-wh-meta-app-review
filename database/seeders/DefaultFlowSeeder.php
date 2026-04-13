@@ -48,8 +48,8 @@ class DefaultFlowSeeder extends Seeder
         $partnerAr = "للتسجيل كعميل أو شريك،يرجى تعبئة نموذج التواصل على الرابط:\nhttps://www.isnaad.ai/contact\n\nفريقنا سيتواصل معك قريباً.";
         $partnerEn = "To register as a client or partner, please complete the form here:\nhttps://www.isnaad.ai/contact\n\nOur team will get back to you shortly.";
 
-        $trackAr = "لتتبع طلبية:\n\n- أرسل رقم الطلبية أو رقم الشحنة في رسالة\n- وسنقوم بمراجعتها والرد عليك\n\n(سيتم تطوير التتبع الآلي لاحقاً)";
-        $trackEn = "To track a shipment:\n\n- Reply with your order or tracking number\n- We will review and get back to you\n\n(Auto-tracking will be added later.)";
+        $trackAr = "لتتبع طلبية:\n\n- أرسل رقم الطلبية أو رقم الشحنة في *الرسالة التالية* (نص عادي)\n- بعدها ستظهر لك القائمة مرة أخرى إذا احتجت خدمة أخرى\n\n(سيتم تطوير التتبع الآلي لاحقاً)";
+        $trackEn = "To track a shipment:\n\n- Send your order or tracking number in your *next message* (plain text)\n- The menu will return afterward if you need another service\n\n(Auto-tracking will be added later.)";
 
         $jobsAr = "الانضمام لفريقنا:\n\n• الموقع: https://www.isnaad.ai\n• الوظائف: https://www.isnaad.ai\n• تواصل معنا: https://www.isnaad.ai/contact\n• لينكد إن: https://www.linkedin.com/company/isnaad\n• الهاتف: +966 8001111905\n• البريد: hello@isnaad.ai\n\n(سيتم تطوير نموذج التقديم داخل الواتساب لاحقاً)";
         $jobsEn = "Careers:\n\n• Website: https://www.isnaad.ai\n• Careers: https://www.isnaad.ai\n• Contact form: https://www.isnaad.ai/contact\n• LinkedIn: https://www.linkedin.com/company/isnaad\n• Phone: +966 8001111905\n• Email: hello@isnaad.ai\n\n(WhatsApp application flow will be added later.)";
@@ -124,9 +124,27 @@ class DefaultFlowSeeder extends Seeder
                 'value' => 'AR',
             ]),
 
-            // --- Tracking (static) ---
+            // --- Tracking (static): instructions, then wait for reference before main menu ---
             $this->node('track_ar', 'send_message', $arX, $y += $dy, ['text' => $trackAr]),
             $this->node('track_en', 'send_message', $enX, $y, ['text' => $trackEn]),
+            $this->node('track_ask_ar', 'ask_input', $arX, $y += $dy, [
+                'questionText' => '',
+                'variableName' => 'order_number',
+                'validateType' => 'any',
+                'errorMessage' => 'يرجى إرسال رقم الطلبية أو التتبع كنص (لا يمكن أن يكون فارغاً).',
+            ]),
+            $this->node('track_ask_en', 'ask_input', $enX, $y, [
+                'questionText' => '',
+                'variableName' => 'order_number',
+                'validateType' => 'any',
+                'errorMessage' => 'Please send an order or tracking reference (cannot be empty).',
+            ]),
+            $this->node('track_thanks_ar', 'send_message', $arX, $y += $dy, [
+                'text' => 'تم استلام المرجع. سنتواصل معك بعد المراجعة.',
+            ]),
+            $this->node('track_thanks_en', 'send_message', $enX, $y, [
+                'text' => 'Thanks — we received your reference. We will follow up after review.',
+            ]),
 
             // --- Careers (static) ---
             $this->node('jobs_ar', 'send_message', $arX, $y += $dy, ['text' => $jobsAr]),
@@ -136,19 +154,24 @@ class DefaultFlowSeeder extends Seeder
             $this->node('partner_ar', 'send_message', $arX, $y += $dy, ['text' => $partnerAr]),
             $this->node('partner_en', 'send_message', $enX, $y, ['text' => $partnerEn]),
 
-            // --- Issue ---
-            $this->node('issue_ar', 'send_message', $arX, $y += $dy, [
-                'text' => "نأسف لذلك. أرسل رقم الطلبية (أرقام فقط) ووصف المشكلة، أو تواصل عبر https://www.isnaad.ai/contact",
-            ]),
-            $this->node('issue_en', 'send_message', $enX, $y, [
-                'text' => "We are sorry. Send your order number (digits) and a short description, or reach us at https://www.isnaad.ai/contact",
-            ]),
+            // --- Order / delivery issue (placeholder until dedicated flow is built) ---
+            $issueSoonAr =
+                "خدمة *مشاكل الطلب والتوصيل* قيد التطوير حالياً وسيتم تفعيلها قريباً.\n\n"
+                ."نعمل على تحسين هذه الخدمة لتقديم تجربة أفضل.\n\n"
+                ."للمساعدة العاجلة، يمكنك التواصل معنا عبر:\nhttps://www.isnaad.ai/contact";
+            $issueSoonEn =
+                "*Order and delivery issues* are not fully automated yet — we are enhancing this service and it will be available soon.\n\n"
+                ."Thank you for your patience.\n\n"
+                ."For urgent help, please contact us:\nhttps://www.isnaad.ai/contact";
+            $this->node('issue_ar', 'send_message', $arX, $y += $dy, ['text' => $issueSoonAr]),
+            $this->node('issue_en', 'send_message', $enX, $y, ['text' => $issueSoonEn]),
 
             $this->node('goto_lang', 'loop_goto', $cx, $y += $dy, ['targetNodeId' => 'pick_lang']),
             $this->node('cs_switch', 'switch_mode', $cx, $y += $dy, [
                 'mode' => 'manual',
                 'autoRevertMinutes' => 0,
-                'triggerWords' => 'stop,cancel,انهاء,وقف',
+                // Extra resume phrases (optional); close/cancel/stop etc. are always recognized in code while in manual.
+                'triggerWords' => 'close,closed,stop,cancel,stopped,end,exit,quit,resume,restart,start,menu,bot,back,انهاء,وقف,إيقاف,ايقاف,ابدأ,قائمة,القائمة,بوت,رجوع,إعادة,اعادة,إغلاق,اغلاق',
             ]),
             $this->node('route_cs_msg', 'condition', $cx, $y += $dy, [
                 'variable' => '__language',
@@ -187,8 +210,12 @@ class DefaultFlowSeeder extends Seeder
 
             $this->edge('e_mar_tr', 'main_ar', 'track_ar', 'row:opt_track'),
             $this->edge('e_men_tr', 'main_en', 'track_en', 'row:opt_track'),
-            $this->edge('e_tr_ar_rm', 'track_ar', 'route_main', 'out'),
-            $this->edge('e_tr_en_rm', 'track_en', 'route_main', 'out'),
+            $this->edge('e_tr_ar_ask', 'track_ar', 'track_ask_ar', 'out'),
+            $this->edge('e_tr_en_ask', 'track_en', 'track_ask_en', 'out'),
+            $this->edge('e_tr_ask_th_ar', 'track_ask_ar', 'track_thanks_ar', 'answer'),
+            $this->edge('e_tr_ask_th_en', 'track_ask_en', 'track_thanks_en', 'answer'),
+            $this->edge('e_tr_th_ar_rm', 'track_thanks_ar', 'route_main', 'out'),
+            $this->edge('e_tr_th_en_rm', 'track_thanks_en', 'route_main', 'out'),
 
             $this->edge('e_mar_j', 'main_ar', 'jobs_ar', 'row:opt_jobs'),
             $this->edge('e_men_j', 'main_en', 'jobs_en', 'row:opt_jobs'),
