@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ContactController;
 use App\Http\Controllers\Api\ConversationController;
+use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\MetaSettingsController;
 use App\Http\Controllers\Api\TemplateController;
 use App\Http\Controllers\Api\UserController;
@@ -57,6 +58,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [ConversationController::class, 'show']);
         Route::get('/{id}/messages', [ConversationController::class, 'messages']);
         Route::post('/{id}/send', [ConversationController::class, 'sendMessage']);
+    });
+
+    Route::prefix('messages')->group(function () {
+        Route::get('/{id}/media', [MediaController::class, 'download']);
     });
 
     Route::prefix('webhook-logs')->group(function () {

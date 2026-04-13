@@ -152,6 +152,98 @@ class ConversationController extends Controller
             return response()->json(['error' => $result['error']], 422);
         }
 
+        $type = $request->input('type', 'text');
+
+        if ($type === 'interactive_list') {
+            $data = $request->validate([
+                'type' => 'required|in:interactive_list',
+                'body' => 'required|string',
+                'button_label' => 'required|string|max:20',
+                'sections' => 'required|array|min:1|max:10',
+                'sections.*.title' => 'required|string|max:24',
+                'sections.*.rows' => 'required|array|min:1|max:10',
+                'sections.*.rows.*.id' => 'required|string|max:200',
+                'sections.*.rows.*.title' => 'required|string|max:24',
+                'sections.*.rows.*.description' => 'nullable|string|max:72',
+            ]);
+
+            $interactive = [
+                'type' => 'list',
+                'body' => ['text' => $data['body']],
+                'action' => [
+                    'button' => $data['button_label'],
+                    'sections' => $data['sections'],
+                ],
+            ];
+
+            $result = $this->metaService->sendInteractive($conversation->contact->phone_number, $interactive);
+
+            if ($result['success']) {
+                Message::create([
+                    'conversation_id' => $conversation->id,
+                    'contact_id' => $conversation->contact->id,
+                    'meta_message_id' => $result['meta_message_id'],
+                    'direction' => 'outbound',
+                    'type' => 'text',
+                    'content' => $data['body'],
+                    'interactive_payload' => $interactive,
+                    'status' => 'sent',
+                    'sent_at' => now(),
+                ]);
+
+                return response()->json([
+                    'message' => 'Interactive list sent successfully',
+                    'meta_message_id' => $result['meta_message_id'],
+                ]);
+            }
+
+            return response()->json(['error' => $result['error']], 422);
+        }
+
+        if ($type === 'interactive_buttons') {
+            $data = $request->validate([
+                'type' => 'required|in:interactive_buttons',
+                'body' => 'required|string',
+                'buttons' => 'required|array|min:1|max:3',
+                'buttons.*.id' => 'required|string|max:200',
+                'buttons.*.title' => 'required|string|max:20',
+            ]);
+
+            $interactive = [
+                'type' => 'button',
+                'body' => ['text' => $data['body']],
+                'action' => [
+                    'buttons' => array_map(
+                        fn ($b) => ['type' => 'reply', 'reply' => ['id' => $b['id'], 'title' => $b['title']]],
+                        $data['buttons']
+                    ),
+                ],
+            ];
+
+            $result = $this->metaService->sendInteractive($conversation->contact->phone_number, $interactive);
+
+            if ($result['success']) {
+                Message::create([
+                    'conversation_id' => $conversation->id,
+                    'contact_id' => $conversation->contact->id,
+                    'meta_message_id' => $result['meta_message_id'],
+                    'direction' => 'outbound',
+                    'type' => 'text',
+                    'content' => $data['body'],
+                    'interactive_payload' => $interactive,
+                    'status' => 'sent',
+                    'sent_at' => now(),
+                ]);
+
+                return response()->json([
+                    'message' => 'Interactive buttons sent successfully',
+                    'meta_message_id' => $result['meta_message_id'],
+                ]);
+            }
+
+            return response()->json(['error' => $result['error']], 422);
+        }
+
         $data = $request->validate([
             'message' => 'required|string',
         ]);

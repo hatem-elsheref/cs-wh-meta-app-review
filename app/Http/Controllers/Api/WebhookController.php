@@ -165,24 +165,49 @@ class WebhookController extends Controller
         $content = null;
         $mediaUrl = null;
         $mediaType = null;
+        $mediaId = null;
+        $interactivePayload = null;
 
         if (isset($msg['text'])) {
             $content = $msg['text']['body'];
         } elseif (isset($msg['interactive'])) {
             $type = 'text';
-            $content = json_encode($msg['interactive']);
+            $interactivePayload = $msg['interactive'];
+            $interactiveType = $msg['interactive']['type'] ?? null;
+
+            if ($interactiveType === 'button_reply') {
+                $title = $msg['interactive']['button_reply']['title'] ?? null;
+                $content = $title ? "Button reply: {$title}" : 'Button reply';
+            } elseif ($interactiveType === 'list_reply') {
+                $title = $msg['interactive']['list_reply']['title'] ?? null;
+                $desc = $msg['interactive']['list_reply']['description'] ?? null;
+                $content = $title ? ($desc ? "List reply: {$title} — {$desc}" : "List reply: {$title}") : 'List reply';
+            } else {
+                $content = 'Interactive reply';
+            }
         } elseif (isset($msg['image'])) {
             $type = 'image';
-            $mediaUrl = $msg['image']['mime_type'] ?? null;
+            $mediaId = $msg['image']['id'] ?? null;
+            $mediaType = $msg['image']['mime_type'] ?? null;
+            $content = $msg['image']['caption'] ?? null;
         } elseif (isset($msg['video'])) {
             $type = 'video';
-            $mediaUrl = $msg['video']['mime_type'] ?? null;
+            $mediaId = $msg['video']['id'] ?? null;
+            $mediaType = $msg['video']['mime_type'] ?? null;
+            $content = $msg['video']['caption'] ?? null;
         } elseif (isset($msg['audio'])) {
             $type = 'audio';
-            $mediaUrl = $msg['audio']['mime_type'] ?? null;
+            $mediaId = $msg['audio']['id'] ?? null;
+            $mediaType = $msg['audio']['mime_type'] ?? null;
         } elseif (isset($msg['document'])) {
             $type = 'document';
-            $mediaUrl = $msg['document']['mime_type'] ?? null;
+            $mediaId = $msg['document']['id'] ?? null;
+            $mediaType = $msg['document']['mime_type'] ?? null;
+            $content = $msg['document']['filename'] ?? null;
+        } elseif (isset($msg['sticker'])) {
+            $type = 'sticker';
+            $mediaId = $msg['sticker']['id'] ?? null;
+            $mediaType = $msg['sticker']['mime_type'] ?? null;
         }
 
         $message = Message::create([
@@ -192,6 +217,8 @@ class WebhookController extends Controller
             'direction' => 'inbound',
             'type' => $type,
             'content' => $content,
+            'interactive_payload' => $interactivePayload,
+            'media_id' => $mediaId,
             'media_url' => $mediaUrl,
             'media_type' => $mediaType,
             'status' => 'received',

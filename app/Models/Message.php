@@ -15,6 +15,8 @@ class Message extends Model
         'content',
         'template_name',
         'template_components',
+        'interactive_payload',
+        'media_id',
         'media_url',
         'media_type',
         'status',
@@ -25,6 +27,7 @@ class Message extends Model
 
     protected $casts = [
         'template_components' => 'array',
+        'interactive_payload' => 'array',
         'sent_at' => 'datetime',
         'delivered_at' => 'datetime',
         'read_at' => 'datetime',
