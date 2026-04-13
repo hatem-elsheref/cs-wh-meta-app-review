@@ -1,7 +1,11 @@
 <?php
 
-test('the application returns a successful response', function () {
+test('the root redirects to the SPA', function () {
     $response = $this->get('/');
 
-    $response->assertStatus(200);
+    $response->assertRedirect('/spa');
+});
+
+test('the SPA shell is served', function () {
+    $this->get('/spa')->assertOk();
 });
