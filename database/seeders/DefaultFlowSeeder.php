@@ -62,6 +62,15 @@ class DefaultFlowSeeder extends Seeder
         $jobsAr = "الانضمام لفريقنا:\n\n• الموقع: https://www.isnaad.ai\n• الوظائف: https://www.isnaad.ai\n• تواصل معنا: https://www.isnaad.ai/contact\n• لينكد إن: https://www.linkedin.com/company/isnaad\n• الهاتف: +966 8001111905\n• البريد: hello@isnaad.ai\n\n(سيتم تطوير نموذج التقديم داخل الواتساب لاحقاً)";
         $jobsEn = "Careers:\n\n• Website: https://www.isnaad.ai\n• Careers: https://www.isnaad.ai\n• Contact form: https://www.isnaad.ai/contact\n• LinkedIn: https://www.linkedin.com/company/isnaad\n• Phone: +966 8001111905\n• Email: hello@isnaad.ai\n\n(WhatsApp application flow will be added later.)";
 
+        $issueSoonAr =
+            "خدمة *مشاكل الطلب والتوصيل* قيد التطوير حالياً وسيتم تفعيلها قريباً.\n\n"
+            ."نعمل على تحسين هذه الخدمة لتقديم تجربة أفضل.\n\n"
+            ."للمساعدة العاجلة، يمكنك التواصل معنا عبر:\nhttps://www.isnaad.ai/contact";
+        $issueSoonEn =
+            "*Order and delivery issues* are not fully automated yet — we are enhancing this service and it will be available soon.\n\n"
+            ."Thank you for your patience.\n\n"
+            ."For urgent help, please contact us:\nhttps://www.isnaad.ai/contact";
+
         $cx = 400.0;
         $y = 60.0;
         $dy = 130.0;
@@ -163,14 +172,6 @@ class DefaultFlowSeeder extends Seeder
             $this->node('partner_en', 'send_message', $enX, $y, ['text' => $partnerEn]),
 
             // --- Order / delivery issue (placeholder until dedicated flow is built) ---
-            $issueSoonAr =
-                "خدمة *مشاكل الطلب والتوصيل* قيد التطوير حالياً وسيتم تفعيلها قريباً.\n\n"
-                ."نعمل على تحسين هذه الخدمة لتقديم تجربة أفضل.\n\n"
-                ."للمساعدة العاجلة، يمكنك التواصل معنا عبر:\nhttps://www.isnaad.ai/contact";
-            $issueSoonEn =
-                "*Order and delivery issues* are not fully automated yet — we are enhancing this service and it will be available soon.\n\n"
-                ."Thank you for your patience.\n\n"
-                ."For urgent help, please contact us:\nhttps://www.isnaad.ai/contact";
             $this->node('issue_ar', 'send_message', $arX, $y += $dy, ['text' => $issueSoonAr]),
             $this->node('issue_en', 'send_message', $enX, $y, ['text' => $issueSoonEn]),
 
