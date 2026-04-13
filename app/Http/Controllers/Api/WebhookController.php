@@ -8,13 +8,17 @@ use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\WebhookLog;
+use App\Services\FlowEngine;
 use App\Services\MetaWhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class WebhookController extends Controller
 {
-    public function __construct(private MetaWhatsAppService $metaService) {}
+    public function __construct(
+        private MetaWhatsAppService $metaService,
+        private FlowEngine $flowEngine
+    ) {}
 
     private function isValidSignature(Request $request): bool
     {
@@ -38,9 +42,10 @@ class WebhookController extends Controller
 
     public function verify(Request $request)
     {
-        $mode = $request->query('hub_mode') ?? '';
-        $token = $request->query('hub_token') ?? '';
-        $challenge = $request->query('hub_challenge') ?? '';
+        // Meta uses dotted query keys; PHP converts dots to underscores (hub.mode → hub_mode, etc.).
+        $mode = $request->query('hub_mode') ?? $request->query('hub.mode') ?? '';
+        $token = $request->query('hub_verify_token') ?? $request->query('hub.verify_token') ?? $request->query('hub_token') ?? '';
+        $challenge = $request->query('hub_challenge') ?? $request->query('hub.challenge') ?? '';
 
         WebhookLog::create([
             'event_type' => 'webhook_verify',
@@ -226,6 +231,14 @@ class WebhookController extends Controller
         ]);
 
         event(new NewMessageReceived($message));
+
+        // Run automation flow (single flow) from current state.
+        $this->flowEngine->processIncoming($contact->phone_number, [
+            'type' => $type,
+            'content' => $content,
+            'interactive' => $interactivePayload,
+            'timestamp' => $timestamp->toISOString(),
+        ]);
     }
 
     private function handleStatusUpdate(array $status): void

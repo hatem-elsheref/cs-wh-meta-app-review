@@ -1,0 +1,144 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Events\NewMessageReceived;
+use App\Models\Contact;
+use App\Models\Conversation;
+use App\Models\Message;
+use App\Models\MetaSetting;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
+use Tests\TestCase;
+
+class WebhookWhatsAppTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private function metaSettingsRow(array $overrides = []): MetaSetting
+    {
+        return MetaSetting::create(array_merge([
+            'phone_number_id' => 'phone_1',
+            'waba_id' => 'waba_1',
+            'app_id' => 'app_1',
+            'verify_token' => 'verify_test_token',
+            // SQLite schema after column changes may treat these as NOT NULL.
+            'app_secret' => '',
+            'access_token' => '',
+        ], $overrides));
+    }
+
+    public function test_verify_challenge_with_meta_dot_query_keys(): void
+    {
+        $this->metaSettingsRow();
+
+        // http_build_query() rewrites dotted keys; Meta sends hub.mode, hub.verify_token, hub.challenge literally.
+        $response = $this->get('/api/webhook/whatsapp?hub.mode=subscribe&hub.verify_token=verify_test_token&hub.challenge=999888');
+
+        $response->assertOk();
+        $this->assertSame('999888', $response->getContent());
+    }
+
+    public function test_verify_challenge_with_php_normalized_query_keys(): void
+    {
+        $this->metaSettingsRow();
+
+        $response = $this->get('/api/webhook/whatsapp?hub_mode=subscribe&hub_verify_token=verify_test_token&hub_challenge=abc');
+
+        $response->assertOk();
+        $this->assertSame('abc', $response->getContent());
+    }
+
+    public function test_verify_rejects_wrong_token(): void
+    {
+        $this->metaSettingsRow();
+
+        $response = $this->get('/api/webhook/whatsapp?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=x');
+
+        $response->assertForbidden();
+    }
+
+    public function test_post_rejects_invalid_signature_when_app_secret_configured(): void
+    {
+        $this->metaSettingsRow(['app_secret' => 'top_secret']);
+
+        $body = '{"entry":[]}';
+        $response = $this->call(
+            'POST',
+            '/api/webhook/whatsapp',
+            [],
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_HUB_SIGNATURE_256' => 'sha256=deadbeef',
+            ],
+            $body
+        );
+
+        $response->assertForbidden();
+        $response->assertJsonFragment(['error' => 'Invalid webhook signature']);
+    }
+
+    public function test_post_accepts_valid_signature_and_processes_text_message(): void
+    {
+        Event::fake([NewMessageReceived::class]);
+        $this->metaSettingsRow(['app_secret' => 'top_secret']);
+
+        $payload = [
+            'entry' => [[
+                'changes' => [[
+                    'value' => [
+                        'metadata' => ['display_phone_number' => '+1'],
+                        'messages' => [[
+                            'from' => '15551234567',
+                            'id' => 'wamid.UNITTEST',
+                            'timestamp' => (string) now()->timestamp,
+                            'type' => 'text',
+                            'text' => ['body' => 'Hello from test'],
+                        ]],
+                    ],
+                ]],
+            ]],
+        ];
+
+        $body = json_encode($payload);
+        $sig = 'sha256='.hash_hmac('sha256', $body, 'top_secret');
+
+        $response = $this->call(
+            'POST',
+            '/api/webhook/whatsapp',
+            [],
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_HUB_SIGNATURE_256' => $sig,
+            ],
+            $body
+        );
+
+        $response->assertOk();
+        $response->assertJsonFragment(['status' => 'processed']);
+
+        $this->assertDatabaseHas('contacts', ['phone_number' => '15551234567']);
+        $contact = Contact::where('phone_number', '15551234567')->first();
+        $this->assertNotNull($contact);
+
+        $conversation = Conversation::where('contact_id', $contact->id)->first();
+        $this->assertNotNull($conversation);
+        $this->assertNotNull($conversation->window_expires_at);
+        $this->assertTrue($conversation->window_expires_at->isFuture());
+
+        $this->assertDatabaseHas('messages', [
+            'conversation_id' => $conversation->id,
+            'meta_message_id' => 'wamid.UNITTEST',
+            'direction' => 'inbound',
+        ]);
+
+        $msg = Message::where('meta_message_id', 'wamid.UNITTEST')->first();
+        $this->assertSame('Hello from test', $msg->content);
+
+        Event::assertDispatched(NewMessageReceived::class);
+    }
+}

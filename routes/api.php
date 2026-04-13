@@ -1,8 +1,10 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\AiSettingsController;
 use App\Http\Controllers\Api\ContactController;
 use App\Http\Controllers\Api\ConversationController;
+use App\Http\Controllers\Api\FlowController;
 use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\MetaSettingsController;
 use App\Http\Controllers\Api\TemplateController;
@@ -38,6 +40,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/webhook-url', [MetaSettingsController::class, 'getWebhookUrl']);
     })->middleware('admin');
 
+    Route::prefix('ai-settings')->group(function () {
+        Route::get('/', [AiSettingsController::class, 'index']);
+        Route::post('/', [AiSettingsController::class, 'store']);
+    })->middleware('admin');
+
     Route::prefix('templates')->group(function () {
         Route::get('/', [TemplateController::class, 'index']);
         Route::post('/sync', [TemplateController::class, 'sync']);
@@ -58,6 +65,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [ConversationController::class, 'show']);
         Route::get('/{id}/messages', [ConversationController::class, 'messages']);
         Route::post('/{id}/send', [ConversationController::class, 'sendMessage']);
+    });
+
+    Route::prefix('flow')->group(function () {
+        Route::get('/', [FlowController::class, 'show'])->middleware('admin');
+        Route::put('/', [FlowController::class, 'update'])->middleware('admin');
     });
 
     Route::prefix('messages')->group(function () {
