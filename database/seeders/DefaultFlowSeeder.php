@@ -8,20 +8,28 @@ use Illuminate\Database\Seeder;
 /**
  * Bilingual default menu: language, tracking/jobs (static), partner signup link, delivery issues,
  * manual customer care, change language.
+ *
+ * Re-running this seeder updates the *first* flow row (same id) with the latest default graph.
+ * It does not delete or insert a second flow when one already exists.
  */
 class DefaultFlowSeeder extends Seeder
 {
     public function run(): void
     {
-        if (Flow::query()->exists()) {
-            return;
-        }
-
         [$nodes, $edges] = $this->buildGraph();
-        Flow::create([
-            'nodes_json' => $nodes,
-            'edges_json' => $edges,
-        ]);
+
+        $flow = Flow::query()->orderBy('id')->first();
+        if ($flow) {
+            $flow->update([
+                'nodes_json' => $nodes,
+                'edges_json' => $edges,
+            ]);
+        } else {
+            Flow::create([
+                'nodes_json' => $nodes,
+                'edges_json' => $edges,
+            ]);
+        }
     }
 
     /**
