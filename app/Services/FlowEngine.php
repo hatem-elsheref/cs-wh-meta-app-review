@@ -451,7 +451,22 @@ class FlowEngine
 
                     $result = $this->executeSystemFunction($fn, $state->variables ?? [], (string) $state->phone);
                     $vars = $state->variables ?? [];
-                    foreach (['res_ar', 'res_en', 'account_id', 'order_number', 'tracking', 'tracking_url', 'tracking_status'] as $k) {
+                    foreach ([
+                        'res_ar',
+                        'res_en',
+                        'account_id',
+                        'order_number',
+                        'store_id',
+                        'tracking',
+                        'tracking_url',
+                        'tracking_status',
+                        'store',
+                        'order_status',
+                        'carrier',
+                        'tracking_number',
+                        'shipping_number',
+                        'result',
+                    ] as $k) {
                         if (array_key_exists($k, $result)) {
                             $vars[$k] = $result[$k];
                         }
@@ -746,10 +761,12 @@ class FlowEngine
     private function executeSystemFunction(string $fn, array $vars, string $waPhone): array
     {
         $order = (string) Arr::get($vars, 'order_number', '');
+        $storeId = (string) Arr::get($vars, 'store_id', '');
 
         return match ($fn) {
             'track_order', 'trackOrder' => $this->orderTracking->trackOrder($order, $waPhone),
             'check_order', 'checkOrder' => $this->orderTracking->checkOrder($order, $waPhone),
+            'order_missed', 'orderMissed', 'order_issue', 'orderIssue' => $this->orderTracking->orderMissed($order, $storeId, $waPhone),
             'get_order_details' => ['ok' => true, 'res_ar' => '', 'res_en' => '', 'order' => $order],
             'check_stock' => ['ok' => true, 'res_ar' => '', 'res_en' => '', 'in_stock' => true],
             'get_customer_info' => ['ok' => true, 'res_ar' => '', 'res_en' => '', 'phone' => Arr::get($vars, 'phone', null)],

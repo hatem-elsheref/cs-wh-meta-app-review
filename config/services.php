@@ -45,6 +45,10 @@ return [
             (string) (env('ISNAAD_ORDER_TRACKING_BASE_URL') ?: 'https://portal.isnaad.sa/api/order-tracking'),
             '/'
         ),
+        'order_missed_base_url' => rtrim(
+            (string) (env('ISNAAD_ORDER_MISSED_BASE_URL') ?: 'https://portal.isnaad.sa/api/order-missed'),
+            '/'
+        ),
     ],
 
 ];

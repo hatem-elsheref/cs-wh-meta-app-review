@@ -13,11 +13,25 @@ use Illuminate\Support\Facades\Log;
 class OrderTrackingService
 {
     private const DEFAULT_TRACKING_BASE = 'https://portal.isnaad.sa/api/order-tracking';
+    private const DEFAULT_ORDER_MISSED_BASE = 'https://portal.isnaad.sa/api/order-missed';
+
+    /**
+     * Short fallback shown when the order-issue API is unavailable.
+     *
+     * @return array{res_ar: string, res_en: string}
+     */
+    private function issueServiceFallbackCopy(): array
+    {
+        return [
+            'res_ar' => "خدمة البلاغات قيد التطوير حالياً.\nنعمل على تحسينها لعملائنا.\nيرجى المحاولة لاحقاً.",
+            'res_en' => "This service is currently under development.\nWe are enhancing it for our clients.\nPlease try again later.",
+        ];
+    }
 
     /**
      * Primary tracking by order number (digits only, per API path).
      *
-     * @return array{ok: bool, res_ar: string, res_en: string, tracking_url?: string|null, tracking_status?: string}
+     * @return array{ok: bool, res_ar: string, res_en: string, tracking_url?: string|null, tracking_status?: string, store?: string|null, order_status?: string|null, carrier?: string|null, tracking_number?: string|null}
      */
     public function trackOrder(string $orderNumber, string $waPhone): array
     {
@@ -27,8 +41,8 @@ class OrderTrackingService
         if ($orderNumber === '' || ! ctype_digit($orderNumber)) {
             return [
                 'ok' => false,
-                'res_ar' => 'رقم الطلب غير صالح. يرجى إرسال أرقام فقط بدون مسافات أو رموز.',
-                'res_en' => 'Invalid order number. Please send digits only (no spaces or symbols).',
+                'res_ar' => 'رقم الطلب غير صالح. يرجى إرسال أرقام فقط.',
+                'res_en' => 'Invalid order number. Please send digits only.',
             ];
         }
 
@@ -51,8 +65,8 @@ class OrderTrackingService
 
             return [
                 'ok' => false,
-                'res_ar' => 'تعذر الاتصال بخدمة التتبع حالياً. حاول لاحقاً أو تواصل مع الدعم.',
-                'res_en' => 'We could not reach the tracking service. Please try again later or contact support.',
+                'res_ar' => 'تعذر الوصول إلى خدمة التتبع حالياً. يرجى المحاولة لاحقاً.',
+                'res_en' => 'Tracking service is currently unavailable. Please try again later.',
                 'tracking_url' => null,
                 'tracking_status' => 'request_failed',
             ];
@@ -66,8 +80,8 @@ class OrderTrackingService
 
             return [
                 'ok' => false,
-                'res_ar' => 'تعذر الاتصال بخدمة التتبع حالياً. حاول لاحقاً أو تواصل مع الدعم.',
-                'res_en' => 'We could not reach the tracking service. Please try again later or contact support.',
+                'res_ar' => 'تعذر الوصول إلى خدمة التتبع حالياً. يرجى المحاولة لاحقاً.',
+                'res_en' => 'Tracking service is currently unavailable. Please try again later.',
                 'tracking_url' => null,
                 'tracking_status' => 'http_error',
             ];
@@ -90,14 +104,26 @@ class OrderTrackingService
 
         $status = strtolower((string) ($data['status'] ?? ''));
         $url = isset($data['url']) && is_string($data['url']) && $data['url'] !== '' ? $data['url'] : null;
+        $store = isset($data['store']) && is_string($data['store']) && $data['store'] !== '' ? $data['store'] : null;
+        $orderStatus = isset($data['order_status']) && is_string($data['order_status']) && $data['order_status'] !== '' ? $data['order_status'] : null;
+        $carrier = isset($data['carrier']) && is_string($data['carrier']) && $data['carrier'] !== '' ? $data['carrier'] : null;
+        $trackingNumber = isset($data['tracking_number']) && is_string($data['tracking_number']) && $data['tracking_number'] !== '' ? $data['tracking_number'] : null;
 
-        return $this->messagesForStatus($status, $orderNumber, $url);
+        return $this->messagesForStatus($status, $orderNumber, $url, $store, $orderStatus, $carrier, $trackingNumber);
     }
 
     /**
-     * @return array{ok: bool, res_ar: string, res_en: string, tracking_url?: string|null, tracking_status?: string}
+     * @return array{ok: bool, res_ar: string, res_en: string, tracking_url?: string|null, tracking_status?: string, store?: string|null, order_status?: string|null, carrier?: string|null, tracking_number?: string|null}
      */
-    private function messagesForStatus(string $status, string $orderNumber, ?string $url): array
+    private function messagesForStatus(
+        string $status,
+        string $orderNumber,
+        ?string $url,
+        ?string $store = null,
+        ?string $orderStatus = null,
+        ?string $carrier = null,
+        ?string $trackingNumber = null
+    ): array
     {
         $n = $orderNumber;
 
@@ -105,43 +131,51 @@ class OrderTrackingService
             'ready' => $url !== null
                 ? [
                     'ok' => true,
-                    'res_ar' => "طلبيتك *#{$n}* جاهزة للتتبع.\n\nرابط التتبع:\n{$url}",
-                    'res_en' => "Your order *#{$n}* is ready to track.\n\nTracking link:\n{$url}",
+                    'res_ar' => "تفاصيل الطلب *#{$n}*:\nالمتجر: ".($store ?? 'غير محدد')."\nحالة الطلب: ".($orderStatus ?? 'غير محدد')."\nشركة الشحن: ".($carrier ?? 'غير محدد')."\nرقم التتبع: ".($trackingNumber ?? 'غير متوفر')."\nرابط التتبع: {$url}",
+                    'res_en' => "Order details *#{$n}*:\nStore: ".($store ?? 'N/A')."\nOrder status: ".($orderStatus ?? 'N/A')."\nCarrier: ".($carrier ?? 'N/A')."\nTracking number: ".($trackingNumber ?? 'N/A')."\nTracking URL: {$url}",
                     'tracking_url' => $url,
                     'tracking_status' => 'ready',
+                    'store' => $store,
+                    'order_status' => $orderStatus,
+                    'carrier' => $carrier,
+                    'tracking_number' => $trackingNumber,
                 ]
                 : [
                     'ok' => true,
-                    'res_ar' => "طلبيتك *#{$n}* جاهزة، لكن رابط التتبع غير متوفر حالياً. تواصل معنا: +966 8001111905",
-                    'res_en' => "Order *#{$n}* is ready, but the tracking link is not available yet. Contact us: +966 8001111905",
+                    'res_ar' => "تفاصيل الطلب *#{$n}*:\nالمتجر: ".($store ?? 'غير محدد')."\nحالة الطلب: ".($orderStatus ?? 'غير محدد')."\nشركة الشحن: ".($carrier ?? 'غير محدد')."\nرقم التتبع: ".($trackingNumber ?? 'غير متوفر')."\nرابط التتبع غير متوفر حالياً.",
+                    'res_en' => "Order details *#{$n}*:\nStore: ".($store ?? 'N/A')."\nOrder status: ".($orderStatus ?? 'N/A')."\nCarrier: ".($carrier ?? 'N/A')."\nTracking number: ".($trackingNumber ?? 'N/A')."\nTracking URL is not available yet.",
                     'tracking_url' => null,
                     'tracking_status' => 'ready',
+                    'store' => $store,
+                    'order_status' => $orderStatus,
+                    'carrier' => $carrier,
+                    'tracking_number' => $trackingNumber,
                 ],
             'preparing' => [
                 'ok' => true,
-                'res_ar' => "طلبيتك *#{$n}* قيد التجهيز حالياً.\n\nسنرسل رابط التتبع فور تجهيز الشحنة للإرسال.",
-                'res_en' => "Your order *#{$n}* is being prepared.\n\nWe will send a tracking link as soon as your shipment is dispatched.",
+                'res_ar' => "تم استلام الطلب *#{$n}*، وجارٍ العمل عليه حالياً. سيتم شحنه في الوقت المحدد.",
+                'res_en' => "We have received order *#{$n}* and are now working on it. It will be shipped within the estimated time.",
                 'tracking_url' => null,
                 'tracking_status' => 'preparing',
             ],
             'out_of_stock' => [
                 'ok' => false,
-                'res_ar' => "طلبيتك *#{$n}*: للأسف الصنف غير متوفر حالياً (*نفاد مخزون*).\n\nيرجى التواصل معنا لترتيب البديل أو الاسترداد.",
-                'res_en' => "Order *#{$n}*: this item is currently *out of stock*.\n\nPlease contact us to arrange a substitute or a refund.",
+                'res_ar' => "تم استلام الطلب *#{$n}*، ولكن لا يمكن البدء بالتجهيز أو الشحن حالياً لعدم توفر كمية كافية من أحد الأصناف. سنبدأ فور توفر الكمية من التاجر.",
+                'res_en' => "We received order *#{$n}*, but we cannot start processing, packing, or shipping yet because one item does not have enough quantity. We will start once enough quantity is received from the merchant.",
                 'tracking_url' => null,
                 'tracking_status' => 'out_of_stock',
             ],
             'not_found' => [
                 'ok' => false,
-                'res_ar' => "لم نعثر على طلبية برقم *#{$n}*.\n\nتأكد من الرقم أو تواصل معنا عبر https://www.isnaad.ai/contact",
-                'res_en' => "We could not find an order with number *#{$n}*.\n\nCheck the number or reach us at https://www.isnaad.ai/contact",
+                'res_ar' => "تعذر العثور على الطلب *#{$n}*. يرجى التحقق من إدخال رقم الطلب أو رقم التتبع بشكل صحيح.",
+                'res_en' => "We cannot find this order *#{$n}*. Please check and ensure you entered the correct order number or tracking number.",
                 'tracking_url' => null,
                 'tracking_status' => 'not_found',
             ],
             default => [
                 'ok' => true,
-                'res_ar' => "حالة طلبيتك *#{$n}*: {$status}. للتفاصيل تواصل مع الدعم.",
-                'res_en' => "Order *#{$n}* status: {$status}. Contact support for details.",
+                'res_ar' => "حالة الطلب *#{$n}*: {$status}.",
+                'res_en' => "Order *#{$n}* status: {$status}.",
                 'tracking_url' => $url,
                 'tracking_status' => $status !== '' ? $status : 'unknown',
             ],
@@ -155,8 +189,8 @@ class OrderTrackingService
     {
         return [
             'ok' => false,
-            'res_ar' => 'استجابة غير متوقعة من خدمة التتبع. حاول مرة أخرى لاحقاً.',
-            'res_en' => 'Unexpected response from the tracking service. Please try again later.',
+            'res_ar' => 'تم استلام استجابة غير متوقعة من خدمة التتبع.',
+            'res_en' => 'Unexpected response from the tracking service.',
             'tracking_url' => null,
             'tracking_status' => 'invalid_response',
         ];
@@ -173,8 +207,8 @@ class OrderTrackingService
         if ($orderNumber === '' || ! ctype_digit($orderNumber)) {
             return [
                 'ok' => false,
-                'res_ar' => 'تعذر التحقق. أرسل رقم الطلبية بأرقام فقط.',
-                'res_en' => 'Could not verify. Send the order number as digits only.',
+                'res_ar' => 'تعذر التحقق. يرجى إرسال رقم الطلب بأرقام فقط.',
+                'res_en' => 'Could not verify. Please send the order number as digits only.',
             ];
         }
 
@@ -183,16 +217,185 @@ class OrderTrackingService
         if (str_ends_with($orderNumber, '404')) {
             return [
                 'ok' => false,
-                'res_ar' => 'لا توجد طلبية مطابقة في حسابك. تواصل معنا: https://www.isnaad.ai/contact',
-                'res_en' => 'No matching order on file. Contact us: https://www.isnaad.ai/contact',
+                'res_ar' => 'لا يوجد طلب مطابق في حسابك.',
+                'res_en' => 'No matching order was found in your account.',
             ];
         }
 
         return [
             'ok' => true,
-            'res_ar' => "تم ربط رقمك بالحساب *{$accountId}*. الطلبية *{$orderNumber}* مسجّلة وسيتم إرسال التفاصيل عند توفرها.",
-            'res_en' => "Your chat is linked to account *{$accountId}*. Order *{$orderNumber}* is on file; we will send details when available.",
+            'res_ar' => "تم ربط محادثتك بالحساب *{$accountId}*. تم تسجيل الطلب *{$orderNumber}*.",
+            'res_en' => "Your chat is linked to account *{$accountId}*. Order *{$orderNumber}* has been registered.",
             'account_id' => $accountId,
+        ];
+    }
+
+    /**
+     * Report an order issue (missed order) by order id + store id.
+     *
+     * Endpoint: GET https://portal.isnaad.sa/api/order-missed/{order_id}/{store_id}
+     *
+     * @return array{
+     *   ok: bool,
+     *   res_ar: string,
+     *   res_en: string,
+     *   issue_status?: string,
+     *   shipping_number?: string|int|null,
+     *   result?: string|null,
+     *   order_number?: string,
+     *   store_id?: string
+     * }
+     */
+    public function orderMissed(string $orderNumber, string $storeId, string $waPhone): array
+    {
+
+//        return [
+//            'status'            => 'added|already_exists|not_found|failed_to_add',
+//            'shipping_number'   => 123 or null if not_found,
+//    'result'            => 'we will put message here may be in en that identity the satte if added or already eists or failed to add wew ill mention th erason'
+//];
+
+        unset($waPhone);
+
+        $orderNumber = trim($orderNumber);
+        $storeId = trim($storeId);
+
+        if ($orderNumber === '' || ! ctype_digit($orderNumber)) {
+            return [
+                'ok' => false,
+                'res_ar' => 'رقم الطلب غير صالح. يرجى إرسال أرقام فقط.',
+                'res_en' => 'Invalid order number. Please send digits only.',
+                'order_number' => $orderNumber,
+                'store_id' => $storeId,
+            ];
+        }
+
+        if ($storeId === '' || ! ctype_digit($storeId)) {
+            return [
+                'ok' => false,
+                'res_ar' => 'معرّف المتجر غير صالح. يرجى إرسال أرقام فقط.',
+                'res_en' => 'Invalid store ID. Please send digits only.',
+                'order_number' => $orderNumber,
+                'store_id' => $storeId,
+            ];
+        }
+
+        $base = rtrim((string) config('services.isnaad.order_missed_base_url', ''), '/');
+        if ($base === '') {
+            $base = rtrim(self::DEFAULT_ORDER_MISSED_BASE, '/');
+        }
+
+        $requestUrl = $base.'/'.$orderNumber.'/'.$storeId;
+
+        try {
+            $response = Http::timeout(20)->acceptJson()->get($requestUrl);
+        } catch (\Throwable $e) {
+            Log::warning('OrderTrackingService: orderMissed request failed', [
+                'order' => $orderNumber,
+                'store_id' => $storeId,
+                'error' => $e->getMessage(),
+            ]);
+
+            $fallback = $this->issueServiceFallbackCopy();
+            return [
+                'ok' => false,
+                'res_ar' => $fallback['res_ar'],
+                'res_en' => $fallback['res_en'],
+                'issue_status' => 'request_failed',
+                'shipping_number' => null,
+                'result' => null,
+                'order_number' => $orderNumber,
+                'store_id' => $storeId,
+            ];
+        }
+
+        if (! $response->successful()) {
+            $fallback = $this->issueServiceFallbackCopy();
+            return [
+                'ok' => false,
+                'res_ar' => $fallback['res_ar'],
+                'res_en' => $fallback['res_en'],
+                'issue_status' => 'http_error',
+                'shipping_number' => null,
+                'result' => null,
+                'order_number' => $orderNumber,
+                'store_id' => $storeId,
+            ];
+        }
+
+        $json = $response->json();
+        if (! is_array($json)) {
+            $fallback = $this->issueServiceFallbackCopy();
+            return [
+                'ok' => false,
+                'res_ar' => $fallback['res_ar'],
+                'res_en' => $fallback['res_en'],
+                'issue_status' => 'invalid_response',
+                'shipping_number' => null,
+                'result' => null,
+                'order_number' => $orderNumber,
+                'store_id' => $storeId,
+            ];
+        }
+
+        $data = $json['data'] ?? null;
+        if (! is_array($data)) {
+            $fallback = $this->issueServiceFallbackCopy();
+            return [
+                'ok' => false,
+                'res_ar' => $fallback['res_ar'],
+                'res_en' => $fallback['res_en'],
+                'issue_status' => 'invalid_response',
+                'shipping_number' => null,
+                'result' => null,
+                'order_number' => $orderNumber,
+                'store_id' => $storeId,
+            ];
+        }
+
+        $status = (string) ($data['status'] ?? '');
+        $status = strtolower($status);
+        $shippingNumber = $data['shipping_number'] ?? null;
+        $result = isset($data['result']) && is_string($data['result']) ? $data['result'] : null;
+
+        // Keep messages short and formal; no extra links.
+        [$resAr, $resEn, $ok] = match ($status) {
+            'added' => [
+                "تم تسجيل البلاغ. رقم الشحن: ".($shippingNumber ?? '-').".",
+                "Your request has been recorded. Shipping number: ".($shippingNumber ?? '-').".",
+                true,
+            ],
+            'already_exists' => [
+                "البلاغ مسجل مسبقاً. رقم الشحن: ".($shippingNumber ?? '-').".",
+                "This request already exists. Shipping number: ".($shippingNumber ?? '-').".",
+                true,
+            ],
+            'not_found' => [
+                'لم يتم العثور على الطلب. يرجى التحقق من رقم الطلب ومعرّف المتجر.',
+                'Order not found. Please verify the order number and store ID.',
+                false,
+            ],
+            'failed_to_add' => [
+                'تعذر تسجيل البلاغ حالياً.',
+                'We could not record this request at the moment.',
+                false,
+            ],
+            default => [
+                'تعذر معالجة الطلب.',
+                'We could not process this request.',
+                false,
+            ],
+        };
+
+        return [
+            'ok' => $ok,
+            'res_ar' => $resAr,
+            'res_en' => $resEn,
+            'issue_status' => $status !== '' ? $status : 'unknown',
+            'shipping_number' => $shippingNumber,
+            'result' => $result,
+            'order_number' => $orderNumber,
+            'store_id' => $storeId,
         ];
     }
 }

@@ -38,38 +38,51 @@ class DefaultFlowSeeder extends Seeder
     private function buildGraph(): array
     {
         $welcomeAr =
-            "\u{1F44B} *مرحباً بك في منصتنا اللوجستية!*\n\n"
-            ."أهلاً وسهلاً — نحن منصة لوجستية متكاملة نخدم مئات العلامات التجارية.\n\n"
-            ."كيف يمكنني مساعدتك اليوم\u{1F4AC} اختر من القائمة أدناه.\n\n"
-            ."─────────────────\n"
-            ."\u{1F4AC} خدمة العملاء أو تغيير اللغة من القائمة.\n"
-            ."0\u{FE0F}\u{20E3} للعودة إلى القائمة في أي وقت.";
+            "مرحباً بك في *إسناد*.\n"
+            ."يرجى اختيار الخدمة المطلوبة من القائمة.";
 
         $welcomeEn =
-            "\u{1F44B} *Welcome to our logistics platform!*\n\n"
-            ."Hello — we are an integrated logistics platform serving many brands.\n\n"
-            ."How can we help today\u{1F4AC} pick an option below.\n\n"
-            ."─────────────────\n"
-            ."\u{1F4AC} Customer care or change language from the list.\n"
-            ."0\u{FE0F}\u{20E3} Return to the menu anytime.";
+            "Welcome to *ISNAAD*.\n"
+            ."Please select the required service from the menu.";
 
-        $partnerAr = "للتسجيل كعميل أو شريك،يرجى تعبئة نموذج التواصل على الرابط:\nhttps://www.isnaad.ai/contact\n\nفريقنا سيتواصل معك قريباً.";
-        $partnerEn = "To register as a client or partner, please complete the form here:\nhttps://www.isnaad.ai/contact\n\nOur team will get back to you shortly.";
+        $partnerAr = "للتسجيل كعميل أو شريك، يرجى تعبئة النموذج:\nhttps://www.isnaad.ai/contact";
+        $partnerEn = "To register as a client or partner, please complete this form:\nhttps://www.isnaad.ai/contact";
 
-        $trackAr = "لتتبع طلبيتك:\n\n- أرسل *رقم الطلبية* في الرسالة التالية (أرقام فقط، مثل 2062380)\n- سنستعلم مباشرة من نظامنا ونرسل لك حالة الطلب ورابط التتبع إن وُجد\n- ثم تعود القائمة إذا احتجت خدمة أخرى";
-        $trackEn = "To track your order:\n\n- Send your *order number* in the next message (*digits only*, e.g. 2062380)\n- We will look it up live and reply with status and a tracking link when available\n- The menu returns afterward if you need another service";
+        $trackAr = "لتتبع الطلب، يرجى إرسال رقم الطلبية (أرقام فقط) في الرسالة التالية.";
+        $trackEn = "To track an order, please send your order number (digits only) in the next message.";
 
-        $jobsAr = "الانضمام لفريقنا:\n\n• الموقع: https://www.isnaad.ai\n• الوظائف: https://www.isnaad.ai\n• تواصل معنا: https://www.isnaad.ai/contact\n• لينكد إن: https://www.linkedin.com/company/isnaad\n• الهاتف: +966 8001111905\n• البريد: hello@isnaad.ai\n\n(سيتم تطوير نموذج التقديم داخل الواتساب لاحقاً)";
-        $jobsEn = "Careers:\n\n• Website: https://www.isnaad.ai\n• Careers: https://www.isnaad.ai\n• Contact form: https://www.isnaad.ai/contact\n• LinkedIn: https://www.linkedin.com/company/isnaad\n• Phone: +966 8001111905\n• Email: hello@isnaad.ai\n\n(WhatsApp application flow will be added later.)";
+        $jobsAr =
+            "للتوظيف:\n"
+            ."الموقع: https://www.isnaad.ai\n"
+            ."لينكد إن: https://www.linkedin.com/company/isnaadsa/\n"
+            ."نموذج التواصل: https://www.isnaad.ai/contact";
+        $jobsEn =
+            "Careers:\n"
+            ."Website: https://www.isnaad.ai\n"
+            ."LinkedIn: https://www.linkedin.com/company/isnaadsa/\n"
+            ."Contact form: https://www.isnaad.ai/contact";
+
+        $aboutAr =
+            "نبذة عن *إسناد*:\n"
+            ."نقدم حلولاً تقنية وتشغيلية للتجارة الإلكترونية تشمل إدارة المخزون، تجهيز الطلبات، التوصيل للعميل، وخدمات استشارية لرفع جودة العمليات وتسريع النمو.\n\n"
+            ."الموقع: https://www.isnaad.ai\n"
+            ."هاتف: +966 8001111905\n"
+            ."لينكد إن: https://www.linkedin.com/company/isnaadsa/\n"
+            ."تواصل معنا: https://www.isnaad.ai/contact";
+        $aboutEn =
+            "About *ISNAAD*:\n"
+            ."We provide technical and operational solutions for e-commerce, including inventory management, order fulfillment, last-mile delivery, and related consultancy to improve operational quality and accelerate growth.\n\n"
+            ."Website: https://www.isnaad.ai\n"
+            ."Phone: +966 8001111905\n"
+            ."LinkedIn: https://www.linkedin.com/company/isnaadsa/\n"
+            ."Contact: https://www.isnaad.ai/contact";
 
         $issueSoonAr =
-            "خدمة *مشاكل الطلب والتوصيل* قيد التطوير حالياً وسيتم تفعيلها قريباً.\n\n"
-            ."نعمل على تحسين هذه الخدمة لتقديم تجربة أفضل.\n\n"
-            ."للمساعدة العاجلة، يمكنك التواصل معنا عبر:\nhttps://www.isnaad.ai/contact";
+            "خدمة مشاكل الطلب والتوصيل قيد التطوير وستتوفر قريباً.\n"
+            ."للدعم العاجل:\nhttps://www.isnaad.ai/contact";
         $issueSoonEn =
-            "*Order and delivery issues* are not fully automated yet — we are enhancing this service and it will be available soon.\n\n"
-            ."Thank you for your patience.\n\n"
-            ."For urgent help, please contact us:\nhttps://www.isnaad.ai/contact";
+            "Order and delivery issue handling is under development and will be available soon.\n"
+            ."For urgent support:\nhttps://www.isnaad.ai/contact";
 
         $cx = 400.0;
         $y = 60.0;
@@ -108,6 +121,7 @@ class DefaultFlowSeeder extends Seeder
                         ['id' => 'opt_jobs', 'title' => 'الانضمام — وظائف', 'description' => ''],
                         ['id' => 'opt_partner', 'title' => 'تسجيل كشريك', 'description' => ''],
                         ['id' => 'opt_issue', 'title' => 'مشكلة في طلبية', 'description' => ''],
+                        ['id' => 'opt_about', 'title' => 'من نحن', 'description' => ''],
                         ['id' => 'opt_cs', 'title' => 'خدمة العملاء', 'description' => ''],
                         ['id' => 'opt_lang', 'title' => 'تغيير اللغة', 'description' => ''],
                         ['id' => 'opt_menu', 'title' => 'القائمة (رجوع)', 'description' => ''],
@@ -128,6 +142,7 @@ class DefaultFlowSeeder extends Seeder
                         ['id' => 'opt_jobs', 'title' => 'Careers', 'description' => ''],
                         ['id' => 'opt_partner', 'title' => 'Register as partner', 'description' => ''],
                         ['id' => 'opt_issue', 'title' => 'Order / delivery issue', 'description' => ''],
+                        ['id' => 'opt_about', 'title' => 'About ISNAAD', 'description' => ''],
                         ['id' => 'opt_cs', 'title' => 'Customer care', 'description' => ''],
                         ['id' => 'opt_lang', 'title' => 'Change language', 'description' => ''],
                         ['id' => 'opt_menu', 'title' => 'Menu (back)', 'description' => ''],
@@ -148,13 +163,13 @@ class DefaultFlowSeeder extends Seeder
                 'questionText' => '',
                 'variableName' => 'order_number',
                 'validateType' => 'digits',
-                'errorMessage' => 'يرجى إرسال رقم الطلبية بأرقام فقط (بدون حروف أو مسافات).',
+                'errorMessage' => 'يرجى إرسال رقم الطلبية بأرقام فقط.',
             ]),
             $this->node('track_ask_en', 'ask_input', $enX, $y, [
                 'questionText' => '',
                 'variableName' => 'order_number',
                 'validateType' => 'digits',
-                'errorMessage' => 'Please send the order number as digits only (no letters or spaces).',
+                'errorMessage' => 'Please send the order number as digits only.',
             ]),
             $this->node('track_lookup', 'system_function', $cx, $y += $dy, [
                 'functionName' => 'track_order',
@@ -181,9 +196,57 @@ class DefaultFlowSeeder extends Seeder
             $this->node('partner_ar', 'send_message', $arX, $y += $dy, ['text' => $partnerAr]),
             $this->node('partner_en', 'send_message', $enX, $y, ['text' => $partnerEn]),
 
-            // --- Order / delivery issue (placeholder until dedicated flow is built) ---
-            $this->node('issue_ar', 'send_message', $arX, $y += $dy, ['text' => $issueSoonAr]),
-            $this->node('issue_en', 'send_message', $enX, $y, ['text' => $issueSoonEn]),
+            // --- About ISNAAD ---
+            $this->node('about_ar', 'send_message', $arX, $y += $dy, ['text' => $aboutAr]),
+            $this->node('about_en', 'send_message', $enX, $y, ['text' => $aboutEn]),
+
+            // --- Order / delivery issue: order ref → store id → order_missed API ---
+            $this->node('issue_intro_ar', 'send_message', $arX, $y += $dy, [
+                'text' => 'لإبلاغ مشكلة في الطلب، يرجى إرسال رقم المرجع في منصتك (أرقام فقط).',
+            ]),
+            $this->node('issue_intro_en', 'send_message', $enX, $y, [
+                'text' => 'To report an order issue, please send the reference number from your platform (digits only).',
+            ]),
+            $this->node('issue_order_ar', 'ask_input', $arX, $y += $dy, [
+                'questionText' => '',
+                'variableName' => 'order_number',
+                'validateType' => 'digits',
+                'errorMessage' => 'يرجى إرسال رقم المرجع بأرقام فقط.',
+            ]),
+            $this->node('issue_order_en', 'ask_input', $enX, $y, [
+                'questionText' => '',
+                'variableName' => 'order_number',
+                'validateType' => 'digits',
+                'errorMessage' => 'Please send the reference number as digits only.',
+            ]),
+            $this->node('issue_store_ar', 'ask_input', $arX, $y += $dy, [
+                'questionText' => 'يرجى إرسال معرّف المتجر (Store ID) في إسناد (أرقام فقط).',
+                'variableName' => 'store_id',
+                'validateType' => 'digits',
+                'errorMessage' => 'يرجى إرسال معرّف المتجر بأرقام فقط.',
+            ]),
+            $this->node('issue_store_en', 'ask_input', $enX, $y, [
+                'questionText' => 'Please send your ISNAAD Store ID (digits only).',
+                'variableName' => 'store_id',
+                'validateType' => 'digits',
+                'errorMessage' => 'Please send the store ID as digits only.',
+            ]),
+            $this->node('issue_lookup', 'system_function', $cx, $y += $dy, [
+                'functionName' => 'order_missed',
+                'parameters' => [],
+                'saveResultVar' => '',
+            ]),
+            $this->node('route_issue_reply', 'condition', $cx, $y += $dy, [
+                'variable' => '__language',
+                'operator' => '==',
+                'value' => 'AR',
+            ]),
+            $this->node('issue_reply_ar', 'send_message', $arX, $y += $dy, [
+                'text' => '{{res_ar}}',
+            ]),
+            $this->node('issue_reply_en', 'send_message', $enX, $y, [
+                'text' => '{{res_en}}',
+            ]),
 
             $this->node('goto_lang', 'loop_goto', $cx, $y += $dy, ['targetNodeId' => 'pick_lang']),
             $this->node('cs_switch', 'switch_mode', $cx, $y += $dy, [
@@ -198,10 +261,10 @@ class DefaultFlowSeeder extends Seeder
                 'value' => 'AR',
             ]),
             $this->node('cs_msg_ar', 'send_message', $arX, $y += $dy, [
-                'text' => 'تم تحويل المحادثة إلى وضع *خدمة العملاء* (الرد الآلي متوقف). سيقوم أحد الزملاء بالرد قريباً.',
+                'text' => 'تم تحويل المحادثة إلى خدمة العملاء. تم إيقاف الرد الآلي مؤقتاً.',
             ]),
             $this->node('cs_msg_en', 'send_message', $enX, $y, [
-                'text' => 'You are now connected to *customer care* (automation paused). A teammate will reply shortly.',
+                'text' => 'You are now connected to customer care. Automation is temporarily paused.',
             ]),
             $this->node('route_hint', 'condition', $cx, $y += $dy, [
                 'variable' => '__language',
@@ -250,10 +313,25 @@ class DefaultFlowSeeder extends Seeder
             $this->edge('e_par_ar', 'partner_ar', 'route_main', 'out'),
             $this->edge('e_par_en', 'partner_en', 'route_main', 'out'),
 
-            $this->edge('e_mar_i', 'main_ar', 'issue_ar', 'row:opt_issue'),
-            $this->edge('e_men_i', 'main_en', 'issue_en', 'row:opt_issue'),
-            $this->edge('e_iss_ar', 'issue_ar', 'route_main', 'out'),
-            $this->edge('e_iss_en', 'issue_en', 'route_main', 'out'),
+            $this->edge('e_mar_i', 'main_ar', 'issue_intro_ar', 'row:opt_issue'),
+            $this->edge('e_men_i', 'main_en', 'issue_intro_en', 'row:opt_issue'),
+            $this->edge('e_iintro_ar_ord', 'issue_intro_ar', 'issue_order_ar', 'out'),
+            $this->edge('e_iintro_en_ord', 'issue_intro_en', 'issue_order_en', 'out'),
+            $this->edge('e_iord_ar_store', 'issue_order_ar', 'issue_store_ar', 'answer'),
+            $this->edge('e_iord_en_store', 'issue_order_en', 'issue_store_en', 'answer'),
+            $this->edge('e_istore_ar_fn', 'issue_store_ar', 'issue_lookup', 'answer'),
+            $this->edge('e_istore_en_fn', 'issue_store_en', 'issue_lookup', 'answer'),
+            $this->edge('e_ifn_ok', 'issue_lookup', 'route_issue_reply', 'success'),
+            $this->edge('e_ifn_err', 'issue_lookup', 'route_issue_reply', 'error'),
+            $this->edge('e_irr_ar', 'route_issue_reply', 'issue_reply_ar', 'true'),
+            $this->edge('e_irr_en', 'route_issue_reply', 'issue_reply_en', 'false'),
+            $this->edge('e_irep_ar_rm', 'issue_reply_ar', 'route_main', 'out'),
+            $this->edge('e_irep_en_rm', 'issue_reply_en', 'route_main', 'out'),
+
+            $this->edge('e_mar_about', 'main_ar', 'about_ar', 'row:opt_about'),
+            $this->edge('e_men_about', 'main_en', 'about_en', 'row:opt_about'),
+            $this->edge('e_about_ar_rm', 'about_ar', 'route_main', 'out'),
+            $this->edge('e_about_en_rm', 'about_en', 'route_main', 'out'),
 
             $this->edge('e_mar_cs', 'main_ar', 'cs_switch', 'row:opt_cs'),
             $this->edge('e_men_cs', 'main_en', 'cs_switch', 'row:opt_cs'),
