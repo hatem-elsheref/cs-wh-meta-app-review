@@ -6,6 +6,9 @@ use App\Models\ConversationState;
 use App\Models\Flow;
 use App\Models\AiSetting;
 use App\Models\Rating;
+use App\Models\Contact;
+use App\Models\Conversation;
+use App\Models\Message;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -103,7 +106,12 @@ class FlowEngine
                     $welcome = (string) ($data['welcomeText'] ?? '');
                     if ($welcome !== '') {
                         $rendered = $this->render($welcome, $state->variables ?? []);
-                        $this->metaService->sendMessage($state->phone, $rendered);
+                        $sent = $this->metaService->sendMessage($state->phone, $rendered);
+                        $this->persistOutbound($state->phone, [
+                            'type' => 'text',
+                            'content' => $rendered,
+                            'meta_message_id' => $sent['meta_message_id'] ?? null,
+                        ]);
                     }
                     $next = $this->nextNodeId($edges, (string) $nodeId, 'begin');
                     if (! $next) {
@@ -117,7 +125,12 @@ class FlowEngine
                     $text = (string) ($data['text'] ?? '');
                     if ($text !== '') {
                         $rendered = $this->render($text, $state->variables ?? []);
-                        $this->metaService->sendMessage($state->phone, $rendered);
+                        $sent = $this->metaService->sendMessage($state->phone, $rendered);
+                        $this->persistOutbound($state->phone, [
+                            'type' => 'text',
+                            'content' => $rendered,
+                            'meta_message_id' => $sent['meta_message_id'] ?? null,
+                        ]);
                     }
                     $next = $this->nextNodeId($edges, (string) $nodeId, 'out');
                     if (! $next) {
@@ -148,7 +161,13 @@ class FlowEngine
                             'action' => ['buttons' => $waButtons],
                         ];
 
-                        $this->metaService->sendInteractive($state->phone, $interactive);
+                        $sent = $this->metaService->sendInteractive($state->phone, $interactive);
+                        $this->persistOutbound($state->phone, [
+                            'type' => 'text',
+                            'content' => (string) ($interactive['body']['text'] ?? ''),
+                            'interactive_payload' => $interactive,
+                            'meta_message_id' => $sent['meta_message_id'] ?? null,
+                        ]);
 
                         $state->awaiting_input = [
                             'kind' => 'interactive',
@@ -184,7 +203,13 @@ class FlowEngine
                         ],
                     ];
 
-                    $this->metaService->sendInteractive($state->phone, $interactive);
+                    $sent = $this->metaService->sendInteractive($state->phone, $interactive);
+                    $this->persistOutbound($state->phone, [
+                        'type' => 'text',
+                        'content' => (string) ($interactive['body']['text'] ?? ''),
+                        'interactive_payload' => $interactive,
+                        'meta_message_id' => $sent['meta_message_id'] ?? null,
+                    ]);
 
                     $state->awaiting_input = [
                         'kind' => 'interactive',
@@ -199,7 +224,12 @@ class FlowEngine
                     $closing = (string) ($data['closingText'] ?? '');
                     if ($closing !== '') {
                         $rendered = $this->render($closing, $state->variables ?? []);
-                        $this->metaService->sendMessage($state->phone, $rendered);
+                        $sent = $this->metaService->sendMessage($state->phone, $rendered);
+                        $this->persistOutbound($state->phone, [
+                            'type' => 'text',
+                            'content' => $rendered,
+                            'meta_message_id' => $sent['meta_message_id'] ?? null,
+                        ]);
                     }
                     $state->delete();
                     return;
@@ -874,6 +904,38 @@ class FlowEngine
             return $e['target'] ?? null;
         }
         return null;
+    }
+
+    /**
+     * Persist outbound (bot/flow) messages so the chat UI shows full history.
+     *
+     * @param  array{type?: string, content?: string|null, interactive_payload?: array|null, meta_message_id?: string|null}  $attrs
+     */
+    private function persistOutbound(string $phone, array $attrs): void
+    {
+        $contact = Contact::query()->firstOrCreate(['phone_number' => $phone], ['opt_in' => true]);
+
+        $conversation = Conversation::query()->firstOrCreate(
+            ['contact_id' => $contact->id],
+            ['status' => 'open', 'window_expires_at' => null]
+        );
+
+        $now = now();
+        $conversation->update([
+            'last_message_at' => $now,
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'contact_id' => $contact->id,
+            'meta_message_id' => $attrs['meta_message_id'] ?? null,
+            'direction' => 'outbound',
+            'type' => $attrs['type'] ?? 'text',
+            'content' => $attrs['content'] ?? null,
+            'interactive_payload' => $attrs['interactive_payload'] ?? null,
+            'status' => 'sent',
+            'sent_at' => $now,
+        ]);
     }
 }
 
