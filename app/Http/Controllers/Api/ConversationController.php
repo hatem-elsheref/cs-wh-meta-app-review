@@ -52,7 +52,7 @@ class ConversationController extends Controller
     public function show(int $id)
     {
         $conversation = Conversation::with(['contact', 'messages' => function ($q) {
-            $q->orderBy('created_at', 'desc')->limit(50);
+            $q->orderBy('created_at', 'desc')->orderBy('id', 'desc')->limit(50);
         }])->findOrFail($id);
 
         return response()->json([
@@ -72,6 +72,7 @@ class ConversationController extends Controller
 
         $messages = Message::where('conversation_id', $id)
             ->orderBy('created_at', 'desc')
+            ->orderBy('id', 'desc')
             ->paginate(50);
 
         return response()->json([

@@ -1,7 +1,9 @@
 <?php
 
 return [
-    'default' => env('BROADCAST_DRIVER', 'pusher'),
+    // Support both legacy BROADCAST_DRIVER and Laravel's BROADCAST_CONNECTION.
+    // Your .env uses BROADCAST_CONNECTION, so prefer it when present.
+    'default' => env('BROADCAST_CONNECTION', env('BROADCAST_DRIVER', 'log')),
 
     'connections' => [
         'pusher' => [
