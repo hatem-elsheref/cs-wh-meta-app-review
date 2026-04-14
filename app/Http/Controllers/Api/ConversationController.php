@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\NewMessageReceived;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Message;
@@ -130,7 +131,7 @@ class ConversationController extends Controller
                     }
                 }
 
-                Message::create([
+                $msg = Message::create([
                     'conversation_id' => $conversation->id,
                     'contact_id' => $conversation->contact->id,
                     'meta_message_id' => $result['meta_message_id'],
@@ -142,6 +143,8 @@ class ConversationController extends Controller
                     'status' => 'sent',
                     'sent_at' => now(),
                 ]);
+                $conversation->update(['last_message_at' => now()]);
+                event(new NewMessageReceived($msg));
 
                 return response()->json([
                     'message' => 'Template sent successfully',
@@ -179,7 +182,7 @@ class ConversationController extends Controller
             $result = $this->metaService->sendInteractive($conversation->contact->phone_number, $interactive);
 
             if ($result['success']) {
-                Message::create([
+                $msg = Message::create([
                     'conversation_id' => $conversation->id,
                     'contact_id' => $conversation->contact->id,
                     'meta_message_id' => $result['meta_message_id'],
@@ -190,6 +193,8 @@ class ConversationController extends Controller
                     'status' => 'sent',
                     'sent_at' => now(),
                 ]);
+                $conversation->update(['last_message_at' => now()]);
+                event(new NewMessageReceived($msg));
 
                 return response()->json([
                     'message' => 'Interactive list sent successfully',
@@ -223,7 +228,7 @@ class ConversationController extends Controller
             $result = $this->metaService->sendInteractive($conversation->contact->phone_number, $interactive);
 
             if ($result['success']) {
-                Message::create([
+                $msg = Message::create([
                     'conversation_id' => $conversation->id,
                     'contact_id' => $conversation->contact->id,
                     'meta_message_id' => $result['meta_message_id'],
@@ -234,6 +239,8 @@ class ConversationController extends Controller
                     'status' => 'sent',
                     'sent_at' => now(),
                 ]);
+                $conversation->update(['last_message_at' => now()]);
+                event(new NewMessageReceived($msg));
 
                 return response()->json([
                     'message' => 'Interactive buttons sent successfully',
@@ -254,7 +261,7 @@ class ConversationController extends Controller
         );
 
         if ($result['success']) {
-            Message::create([
+            $msg = Message::create([
                 'conversation_id' => $conversation->id,
                 'contact_id' => $conversation->contact->id,
                 'meta_message_id' => $result['meta_message_id'],
@@ -264,6 +271,8 @@ class ConversationController extends Controller
                 'status' => 'sent',
                 'sent_at' => now(),
             ]);
+            $conversation->update(['last_message_at' => now()]);
+            event(new NewMessageReceived($msg));
 
             return response()->json([
                 'message' => 'Message sent successfully',

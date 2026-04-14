@@ -9,6 +9,7 @@ use App\Models\Rating;
 use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Events\NewMessageReceived;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -925,7 +926,7 @@ class FlowEngine
             'last_message_at' => $now,
         ]);
 
-        Message::create([
+        $msg = Message::create([
             'conversation_id' => $conversation->id,
             'contact_id' => $contact->id,
             'meta_message_id' => $attrs['meta_message_id'] ?? null,
@@ -936,6 +937,7 @@ class FlowEngine
             'status' => 'sent',
             'sent_at' => $now,
         ]);
+        event(new NewMessageReceived($msg));
     }
 }
 
