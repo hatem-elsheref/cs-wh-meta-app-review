@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::get('/', function () {
-    return redirect('/spa', 302);
+    return redirect('/spa/login', 302);
 });
 
 Route::get('/spa/{path?}', function (?string $path = null) {
