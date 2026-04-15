@@ -9,9 +9,23 @@ use Illuminate\Support\Facades\Hash;
 
 class UserController extends Controller
 {
+    private function ensureNotAdmin(User $user)
+    {
+        if ($user->role === 'admin') {
+            return response()->json([
+                'error' => 'Admin users cannot be viewed or modified via this endpoint',
+            ], 403);
+        }
+
+        return null;
+    }
+
     public function index(Request $request)
     {
-        $query = User::query()->orderBy('created_at', 'desc');
+        // Hide admin users from the list.
+        $query = User::query()
+            ->where('role', '!=', 'admin')
+            ->orderBy('created_at', 'desc');
 
         if ($request->has('status')) {
             $query->where('status', $request->status);
@@ -60,6 +74,9 @@ class UserController extends Controller
     public function show(int $id)
     {
         $user = User::findOrFail($id);
+        if ($resp = $this->ensureNotAdmin($user)) {
+            return $resp;
+        }
 
         return response()->json([
             'data' => $user,
@@ -69,6 +86,9 @@ class UserController extends Controller
     public function update(Request $request, int $id)
     {
         $user = User::findOrFail($id);
+        if ($resp = $this->ensureNotAdmin($user)) {
+            return $resp;
+        }
 
         $data = $request->validate([
             'name' => 'sometimes|string',
@@ -76,12 +96,6 @@ class UserController extends Controller
             'password' => 'sometimes|min:8',
             'role' => 'sometimes|in:admin,agent',
         ]);
-
-        if ($user->role === 'admin' && isset($data['role']) && $data['role'] !== 'admin') {
-            return response()->json([
-                'error' => 'Cannot change admin role',
-            ], 422);
-        }
 
         if (isset($data['password'])) {
             $data['password'] = Hash::make($data['password']);
@@ -98,11 +112,8 @@ class UserController extends Controller
     public function destroy(int $id)
     {
         $user = User::findOrFail($id);
-        
-        if ($user->role === 'admin') {
-            return response()->json([
-                'error' => 'Cannot delete admin user',
-            ], 422);
+        if ($resp = $this->ensureNotAdmin($user)) {
+            return $resp;
         }
         
         $user->delete();
@@ -115,6 +126,9 @@ class UserController extends Controller
     public function approve(int $id)
     {
         $user = User::findOrFail($id);
+        if ($resp = $this->ensureNotAdmin($user)) {
+            return $resp;
+        }
         $user->update(['status' => 'approved']);
 
         return response()->json([
@@ -126,11 +140,8 @@ class UserController extends Controller
     public function reject(int $id)
     {
         $user = User::findOrFail($id);
-        
-        if ($user->role === 'admin') {
-            return response()->json([
-                'error' => 'Cannot reject admin user',
-            ], 422);
+        if ($resp = $this->ensureNotAdmin($user)) {
+            return $resp;
         }
         
         $user->update(['status' => 'rejected']);
