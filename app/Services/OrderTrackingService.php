@@ -248,13 +248,6 @@ class OrderTrackingService
      */
     public function orderMissed(string $orderNumber, string $storeId, string $waPhone): array
     {
-
-//        return [
-//            'status'            => 'added|already_exists|not_found|failed_to_add',
-//            'shipping_number'   => 123 or null if not_found,
-//    'result'            => 'we will put message here may be in en that identity the satte if added or already eists or failed to add wew ill mention th erason'
-//];
-
         unset($waPhone);
 
         $orderNumber = trim($orderNumber);
@@ -310,6 +303,26 @@ class OrderTrackingService
         }
 
         if (! $response->successful()) {
+            // Try to surface upstream error details when available.
+            $json = $response->json();
+            if (is_array($json) && is_array($json['data'] ?? null)) {
+                $data = $json['data'];
+                $status = strtolower((string) ($data['status'] ?? 'http_error'));
+                $shippingNumber = $data['shipping_number'] ?? null;
+                $result = isset($data['result']) && is_string($data['result']) ? $data['result'] : null;
+
+                return [
+                    'ok' => false,
+                    'res_ar' => 'تعذر تسجيل البلاغ حالياً.',
+                    'res_en' => 'We could not record this request at the moment.',
+                    'issue_status' => $status !== '' ? $status : 'http_error',
+                    'shipping_number' => $shippingNumber,
+                    'result' => $result,
+                    'order_number' => $orderNumber,
+                    'store_id' => $storeId,
+                ];
+            }
+
             $fallback = $this->issueServiceFallbackCopy();
             return [
                 'ok' => false,
