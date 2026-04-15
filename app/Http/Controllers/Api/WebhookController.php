@@ -10,6 +10,7 @@ use App\Models\Message;
 use App\Models\WebhookLog;
 use App\Services\FlowEngine;
 use App\Services\MetaWhatsAppService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -145,7 +146,10 @@ class WebhookController extends Controller
     {
         $phoneNumber = $msg['from'];
         $waId = $msg['id'];
-        $timestamp = isset($msg['timestamp']) ? now()->createFromTimestamp((int) $msg['timestamp']) : now();
+        // Meta sends unix timestamps (UTC). Keep all window logic in UTC.
+        $timestamp = isset($msg['timestamp'])
+            ? Carbon::createFromTimestampUTC((int) $msg['timestamp'])
+            : now('UTC');
         $expiresAt = $timestamp->copy()->addHours(24);
 
         $contact = Contact::firstOrCreate(

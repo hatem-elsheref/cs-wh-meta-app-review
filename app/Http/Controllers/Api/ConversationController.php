@@ -8,20 +8,46 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\MessageTemplate;
 use App\Services\MetaWhatsAppService;
+use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
 
 class ConversationController extends Controller
 {
     public function __construct(private MetaWhatsAppService $metaService) {}
 
+    private function displayTimezone(Request $request): string
+    {
+        return (string) ($request->header('X-Timezone') ?: config('app.display_timezone', 'UTC'));
+    }
+
+    private function formatInTz(?CarbonInterface $dt, string $tz): ?string
+    {
+        return $dt ? $dt->copy()->timezone($tz)->toISOString() : null;
+    }
+
     public function index(Request $request)
     {
+        $tz = $this->displayTimezone($request);
         $conversations = Conversation::with('contact')
             ->orderBy('last_message_at', 'desc')
             ->paginate(20);
 
+        $items = array_map(function (Conversation $c) use ($tz) {
+            return [
+                'id' => $c->id,
+                'contact' => $c->contact,
+                'status' => $c->status,
+                'window_open' => $c->isWindowOpen(),
+                // Keep canonical UTC fields (for logic) and provide *_local for display.
+                'last_message_at' => $c->last_message_at,
+                'last_message_at_local' => $this->formatInTz($c->last_message_at, $tz),
+                'window_expires_at' => $c->window_expires_at,
+                'window_expires_at_local' => $this->formatInTz($c->window_expires_at, $tz),
+            ];
+        }, $conversations->items());
+
         return response()->json([
-            'data' => $conversations->items(),
+            'data' => $items,
             'meta' => [
                 'current_page' => $conversations->currentPage(),
                 'last_page' => $conversations->lastPage(),
@@ -55,13 +81,40 @@ class ConversationController extends Controller
             $q->orderBy('created_at', 'desc')->orderBy('id', 'desc')->limit(50);
         }])->findOrFail($id);
 
+        $request = request();
+        $tz = $this->displayTimezone($request);
+
+        $messages = $conversation->messages->map(function (Message $m) use ($tz) {
+            return [
+                'id' => $m->id,
+                'conversation_id' => $m->conversation_id,
+                'contact_id' => $m->contact_id,
+                'meta_message_id' => $m->meta_message_id,
+                'direction' => $m->direction,
+                'type' => $m->type,
+                'content' => $m->content,
+                'template_name' => $m->template_name,
+                'template_components' => $m->template_components,
+                'interactive_payload' => $m->interactive_payload,
+                'media_id' => $m->media_id,
+                'media_url' => $m->media_url,
+                'media_type' => $m->media_type,
+                'status' => $m->status,
+                'sent_at' => $m->sent_at,
+                'sent_at_local' => $this->formatInTz($m->sent_at, $tz),
+                'created_at' => $m->created_at,
+                'created_at_local' => $this->formatInTz($m->created_at, $tz),
+            ];
+        })->values();
+
         return response()->json([
             'data' => [
                 'id' => $conversation->id,
                 'contact' => $conversation->contact,
                 'window_open' => $conversation->isWindowOpen(),
                 'window_expires_at' => $conversation->window_expires_at,
-                'messages' => $conversation->messages,
+                'window_expires_at_local' => $this->formatInTz($conversation->window_expires_at, $tz),
+                'messages' => $messages,
             ],
         ]);
     }
@@ -69,14 +122,38 @@ class ConversationController extends Controller
     public function messages(Request $request, int $id)
     {
         $conversation = Conversation::findOrFail($id);
+        $tz = $this->displayTimezone($request);
 
         $messages = Message::where('conversation_id', $id)
             ->orderBy('created_at', 'desc')
             ->orderBy('id', 'desc')
             ->paginate(50);
 
+        $items = array_map(function (Message $m) use ($tz) {
+            return [
+                'id' => $m->id,
+                'conversation_id' => $m->conversation_id,
+                'contact_id' => $m->contact_id,
+                'meta_message_id' => $m->meta_message_id,
+                'direction' => $m->direction,
+                'type' => $m->type,
+                'content' => $m->content,
+                'template_name' => $m->template_name,
+                'template_components' => $m->template_components,
+                'interactive_payload' => $m->interactive_payload,
+                'media_id' => $m->media_id,
+                'media_url' => $m->media_url,
+                'media_type' => $m->media_type,
+                'status' => $m->status,
+                'sent_at' => $m->sent_at,
+                'sent_at_local' => $this->formatInTz($m->sent_at, $tz),
+                'created_at' => $m->created_at,
+                'created_at_local' => $this->formatInTz($m->created_at, $tz),
+            ];
+        }, $messages->items());
+
         return response()->json([
-            'data' => $messages->items(),
+            'data' => $items,
             'meta' => [
                 'current_page' => $messages->currentPage(),
                 'last_page' => $messages->lastPage(),

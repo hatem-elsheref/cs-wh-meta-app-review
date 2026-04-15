@@ -69,6 +69,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Display Timezone (API/UI)
+    |--------------------------------------------------------------------------
+    |
+    | Keep storage and business logic in UTC. Use this timezone when formatting
+    | timestamps for API responses / UI display.
+    |
+    */
+
+    'display_timezone' => env('APP_DISPLAY_TIMEZONE', 'Asia/Riyadh'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Locale Configuration
     |--------------------------------------------------------------------------
     |
