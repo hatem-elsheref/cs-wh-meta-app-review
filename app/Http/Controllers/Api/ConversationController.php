@@ -90,7 +90,8 @@ class ConversationController extends Controller
     {
         $conversation = Conversation::with('contact')->findOrFail($id);
 
-        if ($conversation->mustUseTemplate()) {
+        // Allow explicit template sends even inside the 24h window.
+        if ($request->filled('template_name') || $conversation->mustUseTemplate()) {
             $data = $request->validate([
                 'template_name' => 'required|string',
                 'template_components' => 'nullable|array',
