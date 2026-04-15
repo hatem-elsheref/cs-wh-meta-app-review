@@ -12,7 +12,8 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::get('/', function () {
-    return redirect('/spa/login', 302);
+    // Let the SPA decide where to go (login vs dashboard) based on stored auth.
+    return redirect('/spa', 302);
 });
 
 Route::get('/spa/{path?}', function (?string $path = null) {

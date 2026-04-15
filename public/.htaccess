@@ -5,6 +5,12 @@
 
     RewriteEngine On
 
+    # SPA under /spa is a real directory (public/spa). Force it through Laravel
+    # so refreshes like /spa or /spa/anything don't become Apache 403.
+    RewriteCond %{REQUEST_URI} ^/spa(/.*)?$ [NC]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ index.php [L]
+
     # Handle Authorization Header
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
