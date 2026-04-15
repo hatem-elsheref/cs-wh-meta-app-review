@@ -10,6 +10,16 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+    private function tokenExpiresAt()
+    {
+        $minutes = config('sanctum.expiration');
+        if ($minutes === null || $minutes === '' || (int) $minutes <= 0) {
+            return null;
+        }
+
+        return now()->addMinutes((int) $minutes);
+    }
+
     public function login(Request $request)
     {
         $request->validate([
@@ -31,11 +41,13 @@ class AuthController extends Controller
             ]);
         }
 
-        $token = $user->createToken('auth-token')->plainTextToken;
+        $expiresAt = $this->tokenExpiresAt();
+        $token = $user->createToken('auth-token', ['*'], $expiresAt)->plainTextToken;
 
         return response()->json([
             'user' => $user,
             'token' => $token,
+            'expires_at' => $expiresAt?->toIso8601String(),
         ]);
     }
 
@@ -44,6 +56,24 @@ class AuthController extends Controller
         $request->user()->currentAccessToken()->delete();
 
         return response()->json(['message' => 'Logged out successfully']);
+    }
+
+    public function refresh(Request $request)
+    {
+        $user = $request->user();
+        $current = $user->currentAccessToken();
+        if ($current) {
+            $current->delete();
+        }
+
+        $expiresAt = $this->tokenExpiresAt();
+        $token = $user->createToken('auth-token', ['*'], $expiresAt)->plainTextToken;
+
+        return response()->json([
+            'user' => $user,
+            'token' => $token,
+            'expires_at' => $expiresAt?->toIso8601String(),
+        ]);
     }
 
     public function me(Request $request)

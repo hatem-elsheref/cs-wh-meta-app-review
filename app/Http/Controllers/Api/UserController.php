@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\UserResource;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -38,7 +39,7 @@ class UserController extends Controller
         $users = $query->paginate(20);
 
         return response()->json([
-            'data' => $users->items(),
+            'data' => UserResource::collection($users->getCollection()),
             'meta' => [
                 'current_page' => $users->currentPage(),
                 'last_page' => $users->lastPage(),
@@ -67,7 +68,7 @@ class UserController extends Controller
 
         return response()->json([
             'message' => 'User created successfully',
-            'user' => $user,
+            'user' => new UserResource($user),
         ], 201);
     }
 
@@ -79,7 +80,7 @@ class UserController extends Controller
         }
 
         return response()->json([
-            'data' => $user,
+            'data' => new UserResource($user),
         ]);
     }
 
@@ -105,7 +106,7 @@ class UserController extends Controller
 
         return response()->json([
             'message' => 'User updated successfully',
-            'user' => $user,
+            'user' => new UserResource($user),
         ]);
     }
 
@@ -133,7 +134,7 @@ class UserController extends Controller
 
         return response()->json([
             'message' => 'User approved successfully',
-            'user' => $user,
+            'user' => new UserResource($user),
         ]);
     }
 
@@ -148,7 +149,7 @@ class UserController extends Controller
 
         return response()->json([
             'message' => 'User rejected successfully',
-            'user' => $user,
+            'user' => new UserResource($user),
         ]);
     }
 }

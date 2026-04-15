@@ -5,6 +5,8 @@ use App\Http\Controllers\Api\AiSettingsController;
 use App\Http\Controllers\Api\ContactController;
 use App\Http\Controllers\Api\ConversationController;
 use App\Http\Controllers\Api\FlowController;
+use App\Http\Controllers\Api\HealthController;
+use App\Http\Controllers\Api\MetricsController;
 use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\MetaSettingsController;
 use App\Http\Controllers\Api\TemplateController;
@@ -18,10 +20,13 @@ Route::post('/register', [AuthController::class, 'register']);
 
 Route::get('/webhook/whatsapp', [WebhookController::class, 'verify']);
 Route::post('/webhook/whatsapp', [WebhookController::class, 'handle']);
+Route::get('/health', HealthController::class);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
+    Route::post('/refresh', [AuthController::class, 'refresh']);
     Route::get('/me', [AuthController::class, 'me']);
+    Route::get('/metrics', MetricsController::class);
 
     Route::prefix('users')->group(function () {
         Route::get('/', [UserController::class, 'index']);
@@ -29,6 +34,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [UserController::class, 'show']);
         Route::put('/{id}', [UserController::class, 'update']);
         Route::delete('/{id}', [UserController::class, 'destroy']);
+        // POST fallbacks for servers that block PUT/DELETE
+        Route::post('/{id}/update', [UserController::class, 'update']);
+        Route::post('/{id}/delete', [UserController::class, 'destroy']);
         Route::post('/{id}/approve', [UserController::class, 'approve']);
         Route::post('/{id}/reject', [UserController::class, 'reject']);
     })->middleware('admin');
@@ -57,6 +65,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [ContactController::class, 'show']);
         Route::put('/{id}', [ContactController::class, 'update']);
         Route::delete('/{id}', [ContactController::class, 'destroy']);
+        // POST fallbacks for servers that block PUT/DELETE
+        Route::post('/{id}/update', [ContactController::class, 'update']);
+        Route::post('/{id}/delete', [ContactController::class, 'destroy']);
     });
 
     Route::prefix('conversations')->group(function () {
@@ -70,6 +81,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('flow')->group(function () {
         Route::get('/', [FlowController::class, 'show'])->middleware('admin');
         Route::put('/', [FlowController::class, 'update'])->middleware('admin');
+        // POST fallback for servers that block PUT
+        Route::post('/', [FlowController::class, 'update'])->middleware('admin');
     });
 
     Route::prefix('messages')->group(function () {

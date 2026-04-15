@@ -284,10 +284,57 @@ class MetaWhatsAppService
                     'success' => true,
                     'content' => $response->body(),
                     'content_type' => $contentType,
+                    'file_size' => $info['file_size'] ?? null,
                 ];
             }
 
             return ['success' => false, 'error' => 'Failed to download media'];
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Proxy media with optional HTTP Range support.
+     *
+     * @return array{success:bool,status?:int,body?:string,headers?:array<string,string>,content_type?:string,file_size?:int|null,error?:string}
+     */
+    public function fetchMedia(string $mediaId, ?string $rangeHeader = null): array
+    {
+        $info = $this->getMediaInfo($mediaId);
+        if (! ($info['success'] ?? false) || empty($info['url'])) {
+            return $info;
+        }
+
+        try {
+            $req = Http::withToken($this->settings->access_token)->timeout(60);
+            if ($rangeHeader) {
+                $req = $req->withHeaders(['Range' => $rangeHeader]);
+            }
+
+            $response = $req->get($info['url']);
+
+            if (! $response->successful() && $response->status() !== 206) {
+                return ['success' => false, 'error' => 'Failed to download media'];
+            }
+
+            $contentType = $response->header('Content-Type') ?: ($info['mime_type'] ?? 'application/octet-stream');
+            $headers = [];
+            foreach (['Content-Range', 'Accept-Ranges', 'Content-Length'] as $h) {
+                $val = $response->header($h);
+                if ($val) {
+                    $headers[$h] = $val;
+                }
+            }
+
+            return [
+                'success' => true,
+                'status' => $response->status(),
+                'body' => $response->body(),
+                'headers' => $headers,
+                'content_type' => $contentType,
+                'file_size' => $info['file_size'] ?? null,
+            ];
         } catch (\Exception $e) {
             return ['success' => false, 'error' => $e->getMessage()];
         }

@@ -50,7 +50,8 @@ return [
     |
     */
 
-    'expiration' => null,
+    // Token expiration in minutes (null = never expires)
+    'expiration' => env('SANCTUM_TOKEN_EXPIRATION', null),
 
     /*
     |--------------------------------------------------------------------------

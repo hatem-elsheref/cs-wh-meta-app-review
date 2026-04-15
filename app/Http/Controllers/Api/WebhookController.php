@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Events\NewMessageReceived;
+use App\Events\MessageStatusUpdated;
 use App\Http\Controllers\Controller;
+use App\Jobs\ProcessIncomingMessage;
 use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Message;
@@ -179,7 +181,8 @@ class WebhookController extends Controller
             'window_expires_at' => $expiresAt,
         ]);
 
-        $type = 'text';
+        // Prefer Meta's explicit type when present.
+        $type = is_string($msg['type'] ?? null) ? (string) $msg['type'] : 'text';
         $content = null;
         $mediaUrl = null;
         $mediaType = null;
@@ -187,6 +190,7 @@ class WebhookController extends Controller
         $interactivePayload = null;
 
         if (isset($msg['text'])) {
+            $type = 'text';
             $content = $msg['text']['body'];
         } elseif (isset($msg['interactive'])) {
             $type = 'text';
@@ -228,6 +232,19 @@ class WebhookController extends Controller
             $mediaType = $msg['sticker']['mime_type'] ?? null;
         }
 
+        // Ensure we always have a displayable fallback content.
+        if ($content === null || trim((string) $content) === '') {
+            $content = match ($type) {
+                'image' => '[Image]',
+                'video' => '[Video]',
+                'audio' => '[Audio]',
+                'document' => '[Document]',
+                'sticker' => '[Sticker]',
+                'interactive' => '[Interactive]',
+                default => '[Message]',
+            };
+        }
+
         $message = Message::create([
             'conversation_id' => $conversation->id,
             'contact_id' => $contact->id,
@@ -243,15 +260,8 @@ class WebhookController extends Controller
             'sent_at' => $timestamp,
         ]);
 
-        event(new NewMessageReceived($message));
-
-        // Run automation flow (single flow) from current state.
-        $this->flowEngine->processIncoming($contact->phone_number, [
-            'type' => $type,
-            'content' => $content,
-            'interactive' => $interactivePayload,
-            'timestamp' => $timestamp->toISOString(),
-        ]);
+        // Queue-compatible: in sync mode it runs immediately, in database/redis it runs async.
+        ProcessIncomingMessage::dispatch($message->id);
     }
 
     /**
@@ -314,6 +324,7 @@ class WebhookController extends Controller
 
         if (! empty($updates)) {
             $message->update($updates);
+            event(new MessageStatusUpdated($message));
         }
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\ContactResource;
 use App\Models\Contact;
 use Illuminate\Http\Request;
 
@@ -24,7 +25,7 @@ class ContactController extends Controller
         $contacts = $query->orderBy('created_at', 'desc')->paginate(20);
 
         return response()->json([
-            'data' => $contacts->items(),
+            'data' => ContactResource::collection($contacts->getCollection()),
             'meta' => [
                 'current_page' => $contacts->currentPage(),
                 'last_page' => $contacts->lastPage(),
@@ -47,16 +48,16 @@ class ContactController extends Controller
 
         return response()->json([
             'message' => 'Contact created successfully',
-            'data' => $contact,
+            'data' => new ContactResource($contact),
         ], 201);
     }
 
     public function show(int $id)
     {
-        $contact = Contact::with(['conversations', 'conversations.messages'])->findOrFail($id);
+        $contact = Contact::findOrFail($id);
 
         return response()->json([
-            'data' => $contact,
+            'data' => new ContactResource($contact),
         ]);
     }
 
@@ -75,7 +76,7 @@ class ContactController extends Controller
 
         return response()->json([
             'message' => 'Contact updated successfully',
-            'data' => $contact,
+            'data' => new ContactResource($contact),
         ]);
     }
 

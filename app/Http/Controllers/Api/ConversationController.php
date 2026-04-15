@@ -7,6 +7,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\MessageTemplate;
+use App\Jobs\SendOutboundMessage;
+use App\Http\Resources\ConversationResource;
+use App\Http\Resources\MessageResource;
 use App\Services\MetaWhatsAppService;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
@@ -14,6 +17,11 @@ use Illuminate\Http\Request;
 class ConversationController extends Controller
 {
     public function __construct(private MetaWhatsAppService $metaService) {}
+
+    private function queueIsSync(): bool
+    {
+        return (string) config('queue.default') === 'sync';
+    }
 
     private function displayTimezone(Request $request): string
     {
@@ -27,27 +35,12 @@ class ConversationController extends Controller
 
     public function index(Request $request)
     {
-        $tz = $this->displayTimezone($request);
         $conversations = Conversation::with('contact')
             ->orderBy('last_message_at', 'desc')
             ->paginate(20);
 
-        $items = array_map(function (Conversation $c) use ($tz) {
-            return [
-                'id' => $c->id,
-                'contact' => $c->contact,
-                'status' => $c->status,
-                'window_open' => $c->isWindowOpen(),
-                // Keep canonical UTC fields (for logic) and provide *_local for display.
-                'last_message_at' => $c->last_message_at,
-                'last_message_at_local' => $this->formatInTz($c->last_message_at, $tz),
-                'window_expires_at' => $c->window_expires_at,
-                'window_expires_at_local' => $this->formatInTz($c->window_expires_at, $tz),
-            ];
-        }, $conversations->items());
-
         return response()->json([
-            'data' => $items,
+            'data' => ConversationResource::collection($conversations->getCollection()),
             'meta' => [
                 'current_page' => $conversations->currentPage(),
                 'last_page' => $conversations->lastPage(),
@@ -81,40 +74,10 @@ class ConversationController extends Controller
             $q->orderBy('created_at', 'desc')->orderBy('id', 'desc')->limit(50);
         }])->findOrFail($id);
 
-        $request = request();
-        $tz = $this->displayTimezone($request);
-
-        $messages = $conversation->messages->map(function (Message $m) use ($tz) {
-            return [
-                'id' => $m->id,
-                'conversation_id' => $m->conversation_id,
-                'contact_id' => $m->contact_id,
-                'meta_message_id' => $m->meta_message_id,
-                'direction' => $m->direction,
-                'type' => $m->type,
-                'content' => $m->content,
-                'template_name' => $m->template_name,
-                'template_components' => $m->template_components,
-                'interactive_payload' => $m->interactive_payload,
-                'media_id' => $m->media_id,
-                'media_url' => $m->media_url,
-                'media_type' => $m->media_type,
-                'status' => $m->status,
-                'sent_at' => $m->sent_at,
-                'sent_at_local' => $this->formatInTz($m->sent_at, $tz),
-                'created_at' => $m->created_at,
-                'created_at_local' => $this->formatInTz($m->created_at, $tz),
-            ];
-        })->values();
-
         return response()->json([
             'data' => [
-                'id' => $conversation->id,
-                'contact' => $conversation->contact,
-                'window_open' => $conversation->isWindowOpen(),
-                'window_expires_at' => $conversation->window_expires_at,
-                'window_expires_at_local' => $this->formatInTz($conversation->window_expires_at, $tz),
-                'messages' => $messages,
+                'conversation' => new ConversationResource($conversation),
+                'messages' => MessageResource::collection($conversation->messages),
             ],
         ]);
     }
@@ -122,38 +85,14 @@ class ConversationController extends Controller
     public function messages(Request $request, int $id)
     {
         $conversation = Conversation::findOrFail($id);
-        $tz = $this->displayTimezone($request);
 
         $messages = Message::where('conversation_id', $id)
             ->orderBy('created_at', 'desc')
             ->orderBy('id', 'desc')
             ->paginate(50);
 
-        $items = array_map(function (Message $m) use ($tz) {
-            return [
-                'id' => $m->id,
-                'conversation_id' => $m->conversation_id,
-                'contact_id' => $m->contact_id,
-                'meta_message_id' => $m->meta_message_id,
-                'direction' => $m->direction,
-                'type' => $m->type,
-                'content' => $m->content,
-                'template_name' => $m->template_name,
-                'template_components' => $m->template_components,
-                'interactive_payload' => $m->interactive_payload,
-                'media_id' => $m->media_id,
-                'media_url' => $m->media_url,
-                'media_type' => $m->media_type,
-                'status' => $m->status,
-                'sent_at' => $m->sent_at,
-                'sent_at_local' => $this->formatInTz($m->sent_at, $tz),
-                'created_at' => $m->created_at,
-                'created_at_local' => $this->formatInTz($m->created_at, $tz),
-            ];
-        }, $messages->items());
-
         return response()->json([
-            'data' => $items,
+            'data' => MessageResource::collection($messages->getCollection()),
             'meta' => [
                 'current_page' => $messages->currentPage(),
                 'last_page' => $messages->lastPage(),
@@ -184,54 +123,50 @@ class ConversationController extends Controller
             ]);
 
             $template = MessageTemplate::where('name', $data['template_name'])->first();
-            $language = $template?->language ?? 'ar';
-
-            $result = $this->metaService->sendMessage(
-                $conversation->contact->phone_number,
-                '',
-                $data['template_name'],
-                $data['template_components'] ?? null,
-                $language
-            );
-
-            if ($result['success']) {
-                $content = $template?->content ?? $data['template_name'];
+            $content = $template?->content ?? $data['template_name'];
                 
-                if (!empty($data['template_components'])) {
-                    foreach ($data['template_components'] as $component) {
-                        $params = $component['parameters'] ?? [];
-                        $paramIndex = 1;
-                        foreach ($params as $param) {
-                            $key = $param['key'] ?? $paramIndex;
-                            $value = $param['text'] ?? $param['value'] ?? '{{' . $key . '}}';
-                            $content = str_replace('{{' . $key . '}}', $value, $content);
-                            $paramIndex++;
-                        }
+            if (!empty($data['template_components'])) {
+                foreach ($data['template_components'] as $component) {
+                    $params = $component['parameters'] ?? [];
+                    $paramIndex = 1;
+                    foreach ($params as $param) {
+                        $key = $param['key'] ?? $paramIndex;
+                        $value = $param['text'] ?? $param['value'] ?? '{{' . $key . '}}';
+                        $content = str_replace('{{' . $key . '}}', $value, $content);
+                        $paramIndex++;
                     }
                 }
+            }
 
-                $msg = Message::create([
-                    'conversation_id' => $conversation->id,
-                    'contact_id' => $conversation->contact->id,
-                    'meta_message_id' => $result['meta_message_id'],
-                    'direction' => 'outbound',
-                    'type' => 'template',
-                    'content' => $content,
-                    'template_name' => $data['template_name'],
-                    'template_components' => $data['template_components'] ?? null,
-                    'status' => 'sent',
-                    'sent_at' => now(),
-                ]);
-                $conversation->update(['last_message_at' => now()]);
-                event(new NewMessageReceived($msg));
+            $msg = Message::create([
+                'conversation_id' => $conversation->id,
+                'contact_id' => $conversation->contact->id,
+                'meta_message_id' => null,
+                'direction' => 'outbound',
+                'type' => 'template',
+                'content' => $content,
+                'template_name' => $data['template_name'],
+                'template_components' => $data['template_components'] ?? null,
+                'status' => 'queued',
+                'sent_at' => null,
+            ]);
+
+            if ($this->queueIsSync()) {
+                app(SendOutboundMessage::class, ['messageId' => $msg->id])->handle($this->metaService);
 
                 return response()->json([
                     'message' => 'Template sent successfully',
-                    'meta_message_id' => $result['meta_message_id'],
+                    'meta_message_id' => Message::find($msg->id)?->meta_message_id,
                 ]);
             }
 
-            return response()->json(['error' => $result['error']], 422);
+            SendOutboundMessage::dispatch($msg->id);
+
+            return response()->json([
+                'message' => 'Template queued',
+                'id' => $msg->id,
+                'status' => 'queued',
+            ], 202);
         }
 
         $type = $request->input('type', 'text');
@@ -258,30 +193,33 @@ class ConversationController extends Controller
                 ],
             ];
 
-            $result = $this->metaService->sendInteractive($conversation->contact->phone_number, $interactive);
+            $msg = Message::create([
+                'conversation_id' => $conversation->id,
+                'contact_id' => $conversation->contact->id,
+                'meta_message_id' => null,
+                'direction' => 'outbound',
+                'type' => 'interactive',
+                'content' => $data['body'],
+                'interactive_payload' => $interactive,
+                'status' => 'queued',
+                'sent_at' => null,
+            ]);
 
-            if ($result['success']) {
-                $msg = Message::create([
-                    'conversation_id' => $conversation->id,
-                    'contact_id' => $conversation->contact->id,
-                    'meta_message_id' => $result['meta_message_id'],
-                    'direction' => 'outbound',
-                    'type' => 'text',
-                    'content' => $data['body'],
-                    'interactive_payload' => $interactive,
-                    'status' => 'sent',
-                    'sent_at' => now(),
-                ]);
-                $conversation->update(['last_message_at' => now()]);
-                event(new NewMessageReceived($msg));
-
+            if ($this->queueIsSync()) {
+                app(SendOutboundMessage::class, ['messageId' => $msg->id])->handle($this->metaService);
                 return response()->json([
                     'message' => 'Interactive list sent successfully',
-                    'meta_message_id' => $result['meta_message_id'],
+                    'meta_message_id' => Message::find($msg->id)?->meta_message_id,
                 ]);
             }
 
-            return response()->json(['error' => $result['error']], 422);
+            SendOutboundMessage::dispatch($msg->id);
+
+            return response()->json([
+                'message' => 'Interactive list queued',
+                'id' => $msg->id,
+                'status' => 'queued',
+            ], 202);
         }
 
         if ($type === 'interactive_buttons') {
@@ -304,61 +242,64 @@ class ConversationController extends Controller
                 ],
             ];
 
-            $result = $this->metaService->sendInteractive($conversation->contact->phone_number, $interactive);
+            $msg = Message::create([
+                'conversation_id' => $conversation->id,
+                'contact_id' => $conversation->contact->id,
+                'meta_message_id' => null,
+                'direction' => 'outbound',
+                'type' => 'interactive',
+                'content' => $data['body'],
+                'interactive_payload' => $interactive,
+                'status' => 'queued',
+                'sent_at' => null,
+            ]);
 
-            if ($result['success']) {
-                $msg = Message::create([
-                    'conversation_id' => $conversation->id,
-                    'contact_id' => $conversation->contact->id,
-                    'meta_message_id' => $result['meta_message_id'],
-                    'direction' => 'outbound',
-                    'type' => 'text',
-                    'content' => $data['body'],
-                    'interactive_payload' => $interactive,
-                    'status' => 'sent',
-                    'sent_at' => now(),
-                ]);
-                $conversation->update(['last_message_at' => now()]);
-                event(new NewMessageReceived($msg));
-
+            if ($this->queueIsSync()) {
+                app(SendOutboundMessage::class, ['messageId' => $msg->id])->handle($this->metaService);
                 return response()->json([
                     'message' => 'Interactive buttons sent successfully',
-                    'meta_message_id' => $result['meta_message_id'],
+                    'meta_message_id' => Message::find($msg->id)?->meta_message_id,
                 ]);
             }
 
-            return response()->json(['error' => $result['error']], 422);
+            SendOutboundMessage::dispatch($msg->id);
+
+            return response()->json([
+                'message' => 'Interactive buttons queued',
+                'id' => $msg->id,
+                'status' => 'queued',
+            ], 202);
         }
 
         $data = $request->validate([
             'message' => 'required|string',
         ]);
 
-        $result = $this->metaService->sendMessage(
-            $conversation->contact->phone_number,
-            $data['message']
-        );
+        $msg = Message::create([
+            'conversation_id' => $conversation->id,
+            'contact_id' => $conversation->contact->id,
+            'meta_message_id' => null,
+            'direction' => 'outbound',
+            'type' => 'text',
+            'content' => $data['message'],
+            'status' => 'queued',
+            'sent_at' => null,
+        ]);
 
-        if ($result['success']) {
-            $msg = Message::create([
-                'conversation_id' => $conversation->id,
-                'contact_id' => $conversation->contact->id,
-                'meta_message_id' => $result['meta_message_id'],
-                'direction' => 'outbound',
-                'type' => 'text',
-                'content' => $data['message'],
-                'status' => 'sent',
-                'sent_at' => now(),
-            ]);
-            $conversation->update(['last_message_at' => now()]);
-            event(new NewMessageReceived($msg));
-
+        if ($this->queueIsSync()) {
+            app(SendOutboundMessage::class, ['messageId' => $msg->id])->handle($this->metaService);
             return response()->json([
                 'message' => 'Message sent successfully',
-                'meta_message_id' => $result['meta_message_id'],
+                'meta_message_id' => Message::find($msg->id)?->meta_message_id,
             ]);
         }
 
-        return response()->json(['error' => $result['error']], 422);
+        SendOutboundMessage::dispatch($msg->id);
+
+        return response()->json([
+            'message' => 'Message queued',
+            'id' => $msg->id,
+            'status' => 'queued',
+        ], 202);
     }
 }
