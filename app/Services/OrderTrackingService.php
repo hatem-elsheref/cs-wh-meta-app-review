@@ -389,13 +389,21 @@ class OrderTrackingService
                 false,
             ],
             'failed_to_add' => [
-                'تعذر تسجيل البلاغ حالياً.',
-                'We could not record this request at the moment.',
+                'تعذر تسجيل البلاغ حالياً.'
+                    .($shippingNumber ? "\nرقم الشحن: {$shippingNumber}" : '')
+                    .($result ? "\nالسبب: {$result}" : ''),
+                'We could not record this request at the moment.'
+                    .($shippingNumber ? "\nShipping number: {$shippingNumber}" : '')
+                    .($result ? "\nReason: {$result}" : ''),
                 false,
             ],
             default => [
-                'تعذر معالجة الطلب.',
-                'We could not process this request.',
+                'تعذر معالجة الطلب.'
+                    .($shippingNumber ? "\nرقم الشحن: {$shippingNumber}" : '')
+                    .($result ? "\nالنتيجة: {$result}" : ''),
+                'We could not process this request.'
+                    .($shippingNumber ? "\nShipping number: {$shippingNumber}" : '')
+                    .($result ? "\nResult: {$result}" : ''),
                 false,
             ],
         };
