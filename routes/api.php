@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\TemplateController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebhookController;
 use App\Http\Controllers\Api\WebhookLogController;
+use App\Http\Controllers\Api\WhatsAppTemplateController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
@@ -87,6 +88,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('messages')->group(function () {
         Route::get('/{id}/media', [MediaController::class, 'download']);
+    });
+
+    Route::prefix('whatsapp')->middleware('admin')->group(function () {
+        Route::post('/templates/send', [WhatsAppTemplateController::class, 'send']);
+        Route::post('/templates/send-multiple', [WhatsAppTemplateController::class, 'sendMultiple']);
     });
 
     Route::prefix('webhook-logs')->group(function () {

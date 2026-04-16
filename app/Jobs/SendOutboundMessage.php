@@ -50,7 +50,7 @@ class SendOutboundMessage implements ShouldQueue
                 $message->template_components,
                 null
             );
-        } elseif ($message->type === 'interactive') {
+        } elseif (! empty($message->interactive_payload)) {
             if (! $message->interactive_payload) {
                 $message->update(['status' => 'failed']);
                 event(new MessageStatusUpdated($message));

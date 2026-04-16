@@ -85,6 +85,20 @@ class FlowEngine
         $this->run($flow, $state);
     }
 
+    private function sendAndPersistText(string $phone, string $text): void
+    {
+        if (trim($text) === '') {
+            return;
+        }
+
+        $sent = $this->metaService->sendMessage($phone, $text);
+        $this->persistOutbound($phone, [
+            'type' => 'text',
+            'content' => $text,
+            'meta_message_id' => $sent['meta_message_id'] ?? null,
+        ]);
+    }
+
     private function run(Flow $flow, ConversationState $state): void
     {
         $nodes = $flow->nodes_json ?? [];
@@ -258,7 +272,7 @@ class FlowEngine
                     $validateType = (string) ($data['validateType'] ?? 'any');
                     $errorMessage = (string) ($data['errorMessage'] ?? 'Invalid value, please try again.');
                     if ($question !== '') {
-                        $this->metaService->sendMessage($state->phone, $question);
+                        $this->sendAndPersistText($state->phone, $question);
                     }
                     $state->awaiting_input = [
                         'kind' => 'ask_input',
@@ -365,7 +379,7 @@ class FlowEngine
                 case 'ai_reply': {
                     $ai = AiSetting::query()->first();
                     if (! $ai || ! $ai->api_key) {
-                        $this->metaService->sendMessage($state->phone, 'AI is not configured yet.');
+                        $this->sendAndPersistText($state->phone, 'AI is not configured yet.');
                         $next = $this->nextNodeId($edges, (string) $nodeId, 'replied');
                         if (! $next) return;
                         $state->current_node_id = $next;
@@ -401,7 +415,7 @@ class FlowEngine
 
                     $reply = $this->callAi($ai, $messages);
                     if ($reply === null) {
-                        $this->metaService->sendMessage($state->phone, 'AI failed to respond.');
+                        $this->sendAndPersistText($state->phone, 'AI failed to respond.');
                     } else {
                         $saveVar = (string) ($data['saveAsVar'] ?? '');
                         if ($saveVar !== '') {
@@ -410,7 +424,7 @@ class FlowEngine
                             $state->variables = $vars;
                             $state->save();
                         }
-                        $this->metaService->sendMessage($state->phone, $reply);
+                        $this->sendAndPersistText($state->phone, $reply);
                     }
 
                     $next = $this->nextNodeId($edges, (string) $nodeId, 'replied');
@@ -464,7 +478,7 @@ class FlowEngine
                             if ($errMsg === '') {
                                 $errMsg = 'Invalid value, please try again.';
                             }
-                            $this->metaService->sendMessage($state->phone, $ask);
+                            $this->sendAndPersistText($state->phone, $ask);
                             $state->awaiting_input = [
                                 'kind' => 'system_param',
                                 'nodeId' => (string) $nodeId,
@@ -539,7 +553,7 @@ class FlowEngine
 
                     // Send as plain text for now. (Template send can be added if you store template_name in node data.)
                     if ($templateText !== '') {
-                        $this->metaService->sendMessage($state->phone, $templateText);
+                        $this->sendAndPersistText($state->phone, $templateText);
                     }
 
                     $state->rating_pending = [
@@ -681,17 +695,17 @@ class FlowEngine
                 $retries++;
                 $state->awaiting_input = array_merge($await, ['retries' => $retries]);
                 $state->save();
-                $this->metaService->sendMessage($state->phone, $errorMessage);
+                $this->sendAndPersistText($state->phone, $errorMessage);
                 if ($kind === 'ask_input') {
                     $node = $this->findNode($flow->nodes_json ?? [], $nodeId);
                     $q = (string) (($node['data']['questionText'] ?? '') ?: '');
                     if ($q !== '') {
-                        $this->metaService->sendMessage($state->phone, $q);
+                        $this->sendAndPersistText($state->phone, $q);
                     }
                 } elseif ($kind === 'system_param') {
                     $q = (string) ($await['paramQuestion'] ?? '');
                     if ($q !== '') {
-                        $this->metaService->sendMessage($state->phone, $q);
+                        $this->sendAndPersistText($state->phone, $q);
                     }
                 }
                 return false;
