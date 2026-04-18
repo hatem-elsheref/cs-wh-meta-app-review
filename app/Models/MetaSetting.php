@@ -21,9 +21,6 @@ class MetaSetting extends Model
     protected $casts = [
         'webhook_verified' => 'boolean',
         'webhook_subscriptions' => 'array',
-        'access_token' => 'encrypted',
-        'app_secret' => 'encrypted',
-        'verify_token' => 'encrypted',
     ];
 
     public static function getSettings(): self

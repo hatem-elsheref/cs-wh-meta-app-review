@@ -23,24 +23,31 @@ class WebhookController extends Controller
         private FlowEngine $flowEngine
     ) {}
 
+    /**
+     * Meta signs the raw POST body with the App Secret (Developer App → Settings → Basic → App secret).
+     * It is not the WhatsApp access token or the verify token.
+     */
     private function isValidSignature(Request $request): bool
     {
         $settings = $this->metaService->getSettings();
         $secret = $settings?->app_secret;
+        $secretTrim = is_string($secret) ? trim($secret) : '';
 
-        // If no app secret is configured, don't block webhooks.
-        if (! $secret) {
+        // If no app secret is configured, don't block webhooks (dev only — set secret in production).
+        if ($secretTrim === '') {
             return true;
         }
 
-        $signature = $request->header('X-Hub-Signature-256');
-        if (! $signature || ! str_starts_with($signature, 'sha256=')) {
+        $signature = trim((string) $request->header('X-Hub-Signature-256'));
+        if ($signature === '' || ! preg_match('/^sha256=(.+)$/i', $signature, $m)) {
             return false;
         }
 
-        $expected = 'sha256='.hash_hmac('sha256', $request->getContent(), $secret);
+        $providedHex = strtolower($m[1]);
+        $rawBody = $request->getContent();
+        $expectedHex = hash_hmac('sha256', $rawBody, $secretTrim);
 
-        return hash_equals($expected, $signature);
+        return hash_equals($expectedHex, $providedHex);
     }
 
     public function verify(Request $request)
@@ -70,12 +77,27 @@ class WebhookController extends Controller
     public function handle(Request $request)
     {
         if (! $this->isValidSignature($request)) {
+            $settings = $this->metaService->getSettings();
+            $sigHeader = trim((string) $request->header('X-Hub-Signature-256'));
+
             WebhookLog::create([
                 'event_type' => 'webhook_signature_invalid',
                 'direction' => 'inbound',
                 'from_number' => $request->ip(),
-                'payload' => $request->headers->all(),
+                'payload' => [
+                    'raw_body_length' => strlen($request->getContent()),
+                    'has_signature_header' => $request->hasHeader('X-Hub-Signature-256'),
+                    'signature_prefix_ok' => $sigHeader !== '' && preg_match('/^sha256=/i', $sigHeader) === 1,
+                    'meta_app_id' => $settings?->app_id,
+                    'app_secret_configured' => is_string($settings?->app_secret) && trim((string) $settings->app_secret) !== '',
+                    'hint' => 'Use the Meta App Secret from developers.facebook.com → Your App → App settings → Basic. Re-save it in Meta settings if you rotated the secret or pasted whitespace.',
+                ],
                 'http_status' => 403,
+            ]);
+
+            Log::warning('WhatsApp webhook signature verification failed', [
+                'raw_body_length' => strlen($request->getContent()),
+                'meta_app_id' => $settings?->app_id,
             ]);
 
             return response()->json(['error' => 'Invalid webhook signature'], 403);
