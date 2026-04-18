@@ -2,14 +2,14 @@
 
 namespace App\Services;
 
-use App\Models\ConversationState;
-use App\Models\Flow;
+use App\Events\NewMessageReceived;
 use App\Models\AiSetting;
-use App\Models\Rating;
 use App\Models\Contact;
 use App\Models\Conversation;
+use App\Models\ConversationState;
+use App\Models\Flow;
 use App\Models\Message;
-use App\Events\NewMessageReceived;
+use App\Models\Rating;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -32,6 +32,7 @@ class FlowEngine
         $flow = Flow::query()->first();
         if (! $flow) {
             Log::warning("FlowEngine: no flow found, skipping. phone={$phone}");
+
             return;
         }
 
@@ -83,8 +84,23 @@ class FlowEngine
         }
 
         // Awaiting input (ask_input/system_function) or awaiting interactive selection.
-        if ($this->resumeIfAwaiting($flow, $state, $incoming, $text)) {
+        $awaitBefore = $state->awaiting_input;
+        $resumed = $this->resumeIfAwaiting($flow, $state, $incoming, $text);
+        if ($resumed) {
             $this->run($flow, $state);
+
+            return;
+        }
+
+        // Invalid ask_input / system_param: we already sent error feedback; do not re-enter run()
+        // on the same node (that would send the question again — duplicate/triple messages).
+        if (
+            is_array($awaitBefore)
+            && in_array((string) ($awaitBefore['kind'] ?? ''), ['ask_input', 'system_param'], true)
+            && is_array($state->awaiting_input)
+            && ($state->awaiting_input['kind'] ?? '') === ($awaitBefore['kind'] ?? '')
+            && (int) ($state->awaiting_input['retries'] ?? 0) > (int) ($awaitBefore['retries'] ?? 0)
+        ) {
             return;
         }
 
@@ -115,6 +131,7 @@ class FlowEngine
             $node = $this->findNode($nodes, $state->current_node_id);
             if (! $node) {
                 Log::warning("FlowEngine: current node missing. phone={$state->phone}");
+
                 return;
             }
 
@@ -140,6 +157,7 @@ class FlowEngine
                     }
                     $state->current_node_id = $next;
                     $state->save();
+
                     continue 2;
 
                 case 'send_message':
@@ -159,9 +177,10 @@ class FlowEngine
                     }
                     $state->current_node_id = $next;
                     $state->save();
+
                     continue 2;
 
-                case 'interactive_menu': {
+                case 'interactive_menu':
                     $mode = (string) ($data['mode'] ?? 'list');
                     $headerText = (string) ($data['headerText'] ?? '');
                     $bodyText = (string) ($data['bodyText'] ?? '');
@@ -196,6 +215,7 @@ class FlowEngine
                             'mode' => 'buttons',
                         ];
                         $state->save();
+
                         return;
                     }
 
@@ -238,8 +258,8 @@ class FlowEngine
                         'mode' => 'list',
                     ];
                     $state->save();
+
                     return;
-                }
 
                 case 'end_flow':
                     $closing = (string) ($data['closingText'] ?? '');
@@ -253,9 +273,10 @@ class FlowEngine
                         ]);
                     }
                     $state->delete();
+
                     return;
 
-                case 'condition': {
+                case 'condition':
                     $var = (string) ($data['variable'] ?? '');
                     $op = (string) ($data['operator'] ?? '==');
                     $value = (string) ($data['value'] ?? '');
@@ -266,13 +287,15 @@ class FlowEngine
                     $result = $this->evalCondition($lhs, $op, $rhs);
                     $handle = $result ? 'true' : 'false';
                     $next = $this->nextNodeId($edges, (string) $nodeId, $handle);
-                    if (! $next) return;
+                    if (! $next) {
+                        return;
+                    }
                     $state->current_node_id = $next;
                     $state->save();
-                    continue 2;
-                }
 
-                case 'ask_input': {
+                    continue 2;
+
+                case 'ask_input':
                     $question = $this->render((string) ($data['questionText'] ?? ''), $state->variables ?? []);
                     $varName = (string) ($data['variableName'] ?? '');
                     $validateType = (string) ($data['validateType'] ?? 'any');
@@ -289,19 +312,23 @@ class FlowEngine
                         'retries' => 0,
                     ];
                     $state->save();
-                    return;
-                }
 
-                case 'api_call': {
+                    return;
+
+                case 'api_call':
                     $method = strtoupper((string) ($data['method'] ?? 'GET'));
                     $url = $this->render((string) ($data['url'] ?? ''), $state->variables ?? []);
-                    if ($url === '') return;
+                    if ($url === '') {
+                        return;
+                    }
 
                     $headers = (array) ($data['headers'] ?? []);
                     $varsCtx = $state->variables ?? [];
                     $headerArr = [];
                     foreach ($headers as $h) {
-                        if (! isset($h['key'])) continue;
+                        if (! isset($h['key'])) {
+                            continue;
+                        }
                         $headerArr[(string) $h['key']] = $this->render((string) ($h['value'] ?? ''), $varsCtx);
                     }
 
@@ -352,7 +379,9 @@ class FlowEngine
                     $matchedHandle = null;
                     foreach ($mappings as $m) {
                         $mid = (string) ($m['id'] ?? '');
-                        if ($mid === '') continue;
+                        if ($mid === '') {
+                            continue;
+                        }
                         $label = (string) ($m['label'] ?? '');
                         $condType = (string) ($m['conditionType'] ?? 'status_equals');
                         $expected = (string) ($m['expected'] ?? '');
@@ -376,20 +405,25 @@ class FlowEngine
 
                     $handle = $matchedHandle ?: ($resp->successful() ? 'success' : 'error');
                     $next = $this->nextNodeId($edges, (string) $nodeId, $handle);
-                    if (! $next) return;
+                    if (! $next) {
+                        return;
+                    }
                     $state->current_node_id = $next;
                     $state->save();
-                    continue 2;
-                }
 
-                case 'ai_reply': {
+                    continue 2;
+
+                case 'ai_reply':
                     $ai = AiSetting::query()->first();
                     if (! $ai || ! $ai->api_key) {
                         $this->sendAndPersistText($state->phone, 'AI is not configured yet.');
                         $next = $this->nextNodeId($edges, (string) $nodeId, 'replied');
-                        if (! $next) return;
+                        if (! $next) {
+                            return;
+                        }
                         $state->current_node_id = $next;
                         $state->save();
+
                         continue 2;
                     }
 
@@ -409,7 +443,9 @@ class FlowEngine
                         foreach (($state->message_history ?? []) as $h) {
                             $role = $h['role'] ?? 'user';
                             $content = $h['content'] ?? '';
-                            if ($content === '') continue;
+                            if ($content === '') {
+                                continue;
+                            }
                             $messages[] = ['role' => $role, 'content' => $content];
                         }
                     }
@@ -434,36 +470,42 @@ class FlowEngine
                     }
 
                     $next = $this->nextNodeId($edges, (string) $nodeId, 'replied');
-                    if (! $next) return;
+                    if (! $next) {
+                        return;
+                    }
                     $state->current_node_id = $next;
                     $state->save();
-                    continue 2;
-                }
 
-                case 'switch_language': {
+                    continue 2;
+
+                case 'switch_language':
                     $state->language = (string) ($data['language'] ?? 'auto');
                     $state->save();
                     $next = $this->nextNodeId($edges, (string) $nodeId, 'out');
-                    if (! $next) return;
+                    if (! $next) {
+                        return;
+                    }
                     $state->current_node_id = $next;
                     $state->save();
-                    continue 2;
-                }
 
-                case 'switch_mode': {
+                    continue 2;
+
+                case 'switch_mode':
                     $newMode = (string) ($data['mode'] ?? 'manual');
                     $state->mode = $newMode === 'auto' ? 'auto' : 'manual';
                     $minutes = (int) ($data['autoRevertMinutes'] ?? 0);
                     $state->mode_revert_at = ($state->mode === 'manual' && $minutes > 0) ? now()->addMinutes($minutes) : null;
                     $state->save();
                     $next = $this->nextNodeId($edges, (string) $nodeId, 'out');
-                    if (! $next) return;
+                    if (! $next) {
+                        return;
+                    }
                     $state->current_node_id = $next;
                     $state->save();
-                    continue 2;
-                }
 
-                case 'system_function': {
+                    continue 2;
+
+                case 'system_function':
                     $fn = (string) ($data['functionName'] ?? 'track_order');
                     $params = (array) ($data['parameters'] ?? []);
                     $saveVar = (string) ($data['saveResultVar'] ?? '');
@@ -496,6 +538,7 @@ class FlowEngine
                                 'retries' => 0,
                             ];
                             $state->save();
+
                             return;
                         }
                     }
@@ -535,21 +578,21 @@ class FlowEngine
                     }
                     $state->current_node_id = $next;
                     $state->save();
-                    continue 2;
-                }
 
-                case 'loop_goto': {
+                    continue 2;
+
+                case 'loop_goto':
                     $target = (string) ($data['targetNodeId'] ?? '');
                     if ($target === '') {
                         return;
                     }
                     $state->current_node_id = $target;
                     $state->save();
+
                     // Continue the run loop so the target node executes in the same turn (e.g. show language picker).
                     continue 2;
-                }
 
-                case 'rate_service_template': {
+                case 'rate_service_template':
                     $templateText = $this->render((string) ($data['templateText'] ?? ''), $state->variables ?? []);
                     $windowHours = (int) ($data['replyWindowHours'] ?? 24);
                     $phoneVar = (string) ($data['phoneVariable'] ?? 'phone');
@@ -571,11 +614,13 @@ class FlowEngine
                     $state->save();
 
                     $next = $this->nextNodeId($edges, (string) $nodeId, 'sent');
-                    if (! $next) return;
+                    if (! $next) {
+                        return;
+                    }
                     $state->current_node_id = $next;
                     $state->save();
+
                     continue 2;
-                }
 
                 default:
                     return;
@@ -685,6 +730,7 @@ class FlowEngine
                 $state->awaiting_input = null;
                 $state->current_node_id = $next;
                 $state->save();
+
                 return true;
             }
 
@@ -701,19 +747,21 @@ class FlowEngine
                 $retries++;
                 $state->awaiting_input = array_merge($await, ['retries' => $retries]);
                 $state->save();
-                $this->sendAndPersistText($state->phone, $errorMessage);
+                $node = $this->findNode($flow->nodes_json ?? [], $nodeId);
+                $q = '';
                 if ($kind === 'ask_input') {
-                    $node = $this->findNode($flow->nodes_json ?? [], $nodeId);
-                    $q = (string) (($node['data']['questionText'] ?? '') ?: '');
-                    if ($q !== '') {
-                        $this->sendAndPersistText($state->phone, $q);
-                    }
-                } elseif ($kind === 'system_param') {
-                    $q = (string) ($await['paramQuestion'] ?? '');
-                    if ($q !== '') {
-                        $this->sendAndPersistText($state->phone, $q);
-                    }
+                    $q = trim((string) (($node['data']['questionText'] ?? '') ?: ''));
+                } else {
+                    $q = trim((string) ($await['paramQuestion'] ?? ''));
                 }
+                $err = trim($errorMessage);
+                // One WhatsApp bubble: prefer the short error; repeat full question only if no error text.
+                if ($err !== '') {
+                    $this->sendAndPersistText($state->phone, $errorMessage);
+                } elseif ($q !== '') {
+                    $this->sendAndPersistText($state->phone, $q);
+                }
+
                 return false;
             }
 
@@ -727,11 +775,14 @@ class FlowEngine
 
             if ($kind === 'ask_input') {
                 $next = $this->nextNodeId($edges, $nodeId, 'answer');
-                if ($next) $state->current_node_id = $next;
+                if ($next) {
+                    $state->current_node_id = $next;
+                }
             }
 
             // system_param resumes at same node (system_function) so run() will retry param resolution.
             $state->save();
+
             return true;
         }
 
@@ -741,16 +792,21 @@ class FlowEngine
     private function tryCaptureRating(ConversationState $state, string $text): bool
     {
         $pending = $state->rating_pending;
-        if (! is_array($pending)) return false;
+        if (! is_array($pending)) {
+            return false;
+        }
         $sentAt = $pending['sentAt'] ?? null;
         $hours = (int) ($pending['windowHours'] ?? 24);
-        if (! $sentAt) return false;
+        if (! $sentAt) {
+            return false;
+        }
 
         $sent = now()->createFromFormat(\DateTimeInterface::ATOM, $sentAt) ?: now();
         if ($sent->copy()->addHours($hours)->isPast()) {
             // Window expired: clear pending and continue normal flow.
             $state->rating_pending = null;
             $state->save();
+
             return false;
         }
 
@@ -767,19 +823,35 @@ class FlowEngine
 
         $state->rating_pending = null;
         $state->save();
+
         return true;
     }
 
     private function validate(string $type, string $text): bool
     {
         $t = trim($text);
-        if ($type === 'any') return $t !== '';
-        if ($type === 'digits') return $t !== '' && ctype_digit($t);
-        if ($type === 'numeric') return is_numeric($t);
-        if ($type === 'email') return filter_var($t, FILTER_VALIDATE_EMAIL) !== false;
-        if ($type === 'phone') return preg_match('/^\\+?[0-9]{7,15}$/', preg_replace('/\\s+/', '', $t)) === 1;
-        if ($type === 'yes-no') return in_array(mb_strtolower($t), ['yes', 'no', 'y', 'n', 'نعم', 'لا'], true);
-        if ($type === 'text') return $t !== '';
+        if ($type === 'any') {
+            return $t !== '';
+        }
+        if ($type === 'digits') {
+            return $t !== '' && ctype_digit($t);
+        }
+        if ($type === 'numeric') {
+            return is_numeric($t);
+        }
+        if ($type === 'email') {
+            return filter_var($t, FILTER_VALIDATE_EMAIL) !== false;
+        }
+        if ($type === 'phone') {
+            return preg_match('/^\\+?[0-9]{7,15}$/', preg_replace('/\\s+/', '', $t)) === 1;
+        }
+        if ($type === 'yes-no') {
+            return in_array(mb_strtolower($t), ['yes', 'no', 'y', 'n', 'نعم', 'لا'], true);
+        }
+        if ($type === 'text') {
+            return $t !== '';
+        }
+
         return true;
     }
 
@@ -787,6 +859,7 @@ class FlowEngine
     {
         $l = is_scalar($lhs) ? (string) $lhs : '';
         $r = (string) $rhs;
+
         return match ($op) {
             '==' => $l === $r,
             '!=' => $l !== $r,
@@ -851,13 +924,16 @@ class FlowEngine
 
                 if (! $res->successful()) {
                     Log::warning('AI request failed: '.$res->body());
+
                     return null;
                 }
 
                 $json = $res->json();
+
                 return $json['choices'][0]['message']['content'] ?? null;
             } catch (\Exception $e) {
                 Log::warning('AI request exception: '.$e->getMessage());
+
                 return null;
             }
         }
@@ -893,6 +969,7 @@ class FlowEngine
         return preg_replace_callback('/\\{\\{\\s*([a-zA-Z0-9_\\.]+)\\s*\\}\\}/', function ($m) use ($vars) {
             $key = $m[1] ?? '';
             $value = Arr::get($vars, $key);
+
             return is_scalar($value) ? (string) $value : '';
         }, $template) ?? $template;
     }
@@ -910,20 +987,31 @@ class FlowEngine
 
     private function findNode(array $nodes, ?string $id): ?array
     {
-        if (! $id) return null;
-        foreach ($nodes as $n) {
-            if (($n['id'] ?? null) === $id) return $n;
+        if (! $id) {
+            return null;
         }
+        foreach ($nodes as $n) {
+            if (($n['id'] ?? null) === $id) {
+                return $n;
+            }
+        }
+
         return null;
     }
 
     private function nextNodeId(array $edges, string $sourceNodeId, ?string $sourceHandle): ?string
     {
         foreach ($edges as $e) {
-            if (($e['source'] ?? null) !== $sourceNodeId) continue;
-            if (($e['sourceHandle'] ?? null) !== $sourceHandle) continue;
+            if (($e['source'] ?? null) !== $sourceNodeId) {
+                continue;
+            }
+            if (($e['sourceHandle'] ?? null) !== $sourceHandle) {
+                continue;
+            }
+
             return $e['target'] ?? null;
         }
+
         return null;
     }
 
@@ -965,4 +1053,3 @@ class FlowEngine
         event(new NewMessageReceived($msg));
     }
 }
-
