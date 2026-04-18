@@ -23,6 +23,12 @@ class FlowEngine
 
     public function processIncoming(string $phone, array $incoming): void
     {
+        if (! config('services.whatsapp.flow_automation_enabled', true)) {
+            Log::info("FlowEngine: automation disabled (WHATSAPP_FLOW_AUTOMATION=false). phone={$phone}");
+
+            return;
+        }
+
         $flow = Flow::query()->first();
         if (! $flow) {
             Log::warning("FlowEngine: no flow found, skipping. phone={$phone}");

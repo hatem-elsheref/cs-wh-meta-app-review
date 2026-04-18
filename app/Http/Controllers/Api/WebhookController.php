@@ -262,6 +262,29 @@ class WebhookController extends Controller
             $type = 'sticker';
             $mediaId = $msg['sticker']['id'] ?? null;
             $mediaType = $msg['sticker']['mime_type'] ?? null;
+        } elseif (isset($msg['contacts']) && is_array($msg['contacts'])) {
+            $type = 'text';
+            $interactivePayload = ['type' => 'contacts', 'items' => $msg['contacts']];
+            $names = [];
+            foreach ($msg['contacts'] as $c) {
+                if (! is_array($c)) {
+                    continue;
+                }
+                $fn = $c['name']['formatted_name'] ?? null;
+                if (is_string($fn) && trim($fn) !== '') {
+                    $names[] = trim($fn);
+                    continue;
+                }
+                $phones = $c['phones'] ?? [];
+                $first = is_array($phones) && $phones !== [] ? ($phones[0] ?? null) : null;
+                $wa = is_array($first) ? ($first['wa_id'] ?? $first['phone'] ?? null) : null;
+                if (is_string($wa) && trim($wa) !== '') {
+                    $names[] = trim($wa);
+                }
+            }
+            $content = $names !== []
+                ? ('Shared contact'.(count($names) > 1 ? 's' : '').': '.implode(', ', array_slice($names, 0, 5)))
+                : 'Shared contact';
         } elseif (isset($msg['location'])) {
             $type = 'location';
             $loc = $msg['location'];
@@ -319,8 +342,13 @@ class WebhookController extends Controller
 
         $conversation->increment('unread_inbound_count');
 
-        // Queue-compatible: in sync mode it runs immediately, in database/redis it runs async.
-        ProcessIncomingMessage::dispatch($message->id);
+        // Default: run in-process so bot replies are not delayed by an idle queue worker.
+        // Set WHATSAPP_PROCESS_INCOMING_SYNC=false and run `php artisan queue:work` for async.
+        if (config('services.whatsapp.process_incoming_sync', true)) {
+            ProcessIncomingMessage::dispatchSync($message->id);
+        } else {
+            ProcessIncomingMessage::dispatch($message->id);
+        }
     }
 
     /**

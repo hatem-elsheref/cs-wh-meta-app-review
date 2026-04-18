@@ -47,6 +47,26 @@ return [
         'api_key' => env('EXTERNAL_WHATSAPP_API_KEY', ''),
     ],
 
+    /*
+    | WhatsApp flow bot (FlowEngine): inbound webhooks trigger automated replies from the configured flow.
+    | Set WHATSAPP_FLOW_AUTOMATION=false to only store messages and use the dashboard for human replies.
+    |
+    | WHATSAPP_PROCESS_INCOMING_SYNC=true (default): run flow in the webhook request so replies are not
+    | delayed by a backed-up queue. Set false and run `php artisan queue:work` if you prefer async.
+    */
+    'whatsapp' => [
+        'flow_automation_enabled' => filter_var(
+            env('WHATSAPP_FLOW_AUTOMATION', true),
+            FILTER_VALIDATE_BOOL,
+            FILTER_NULL_ON_FAILURE
+        ) ?? true,
+        'process_incoming_sync' => filter_var(
+            env('WHATSAPP_PROCESS_INCOMING_SYNC', true),
+            FILTER_VALIDATE_BOOL,
+            FILTER_NULL_ON_FAILURE
+        ) ?? true,
+    ],
+
     'isnaad' => [
         // Use ?: so an empty .env value does not wipe the default (env('X','default') keeps '' if X is set blank).
         'order_tracking_base_url' => rtrim(
