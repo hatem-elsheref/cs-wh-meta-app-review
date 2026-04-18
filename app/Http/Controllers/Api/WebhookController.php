@@ -262,24 +262,31 @@ class WebhookController extends Controller
             $type = 'sticker';
             $mediaId = $msg['sticker']['id'] ?? null;
             $mediaType = $msg['sticker']['mime_type'] ?? null;
-        } elseif (isset($msg['contacts']) && is_array($msg['contacts'])) {
+        } elseif ((isset($msg['contacts']) && is_array($msg['contacts'])) || (($msg['type'] ?? '') === 'contacts')) {
             $type = 'text';
-            $interactivePayload = ['type' => 'contacts', 'items' => $msg['contacts']];
+            $rawContacts = (isset($msg['contacts']) && is_array($msg['contacts'])) ? $msg['contacts'] : [];
+            $items = $this->normalizeSharedContactItems($rawContacts);
+            if ($items === [] && (($msg['type'] ?? '') === 'contacts')) {
+                $items[] = [
+                    'display_name' => 'Shared contact',
+                    'phone' => null,
+                    'wa_id' => null,
+                    'emails' => [],
+                    'phones' => [],
+                ];
+            }
+            $interactivePayload = ['type' => 'contacts', 'items' => $items];
             $names = [];
-            foreach ($msg['contacts'] as $c) {
-                if (! is_array($c)) {
+            foreach ($items as $item) {
+                $label = $item['display_name'] ?? '';
+                $label = is_string($label) ? trim($label) : '';
+                if ($label !== '') {
+                    $names[] = $label;
                     continue;
                 }
-                $fn = $c['name']['formatted_name'] ?? null;
-                if (is_string($fn) && trim($fn) !== '') {
-                    $names[] = trim($fn);
-                    continue;
-                }
-                $phones = $c['phones'] ?? [];
-                $first = is_array($phones) && $phones !== [] ? ($phones[0] ?? null) : null;
-                $wa = is_array($first) ? ($first['wa_id'] ?? $first['phone'] ?? null) : null;
-                if (is_string($wa) && trim($wa) !== '') {
-                    $names[] = trim($wa);
+                $p = $item['phone'] ?? $item['wa_id'] ?? null;
+                if (is_string($p) && trim($p) !== '') {
+                    $names[] = trim($p);
                 }
             }
             $content = $names !== []
@@ -349,6 +356,110 @@ class WebhookController extends Controller
         } else {
             ProcessIncomingMessage::dispatch($message->id);
         }
+    }
+
+    /**
+     * Flatten Meta's vCard-style contact objects into stable fields for storage, broadcasts, and UI.
+     *
+     * @param  array<int, mixed>  $rawContacts
+     * @return array<int, array{display_name: string, phone: ?string, wa_id: ?string, emails: array<int, string>, phones: array<int, array{phone: ?string, wa_id: ?string}>}>
+     */
+    private function normalizeSharedContactItems(array $rawContacts): array
+    {
+        $out = [];
+        foreach ($rawContacts as $c) {
+            if (! is_array($c)) {
+                continue;
+            }
+            $nameBlock = $c['name'] ?? null;
+            $display = '';
+            if (is_string($nameBlock) && trim($nameBlock) !== '') {
+                $display = trim($nameBlock);
+            } elseif (is_array($nameBlock)) {
+                $fn = $nameBlock['formatted_name'] ?? null;
+                if (is_string($fn) && trim($fn) !== '') {
+                    $display = trim($fn);
+                } else {
+                    $parts = array_filter([
+                        $nameBlock['prefix'] ?? null,
+                        $nameBlock['first_name'] ?? null,
+                        $nameBlock['middle_name'] ?? null,
+                        $nameBlock['last_name'] ?? null,
+                        $nameBlock['suffix'] ?? null,
+                    ], fn ($p) => is_string($p) && trim($p) !== '');
+                    if ($parts !== []) {
+                        $display = trim(implode(' ', array_map(static fn ($p) => trim((string) $p), $parts)));
+                    }
+                }
+            }
+            if ($display === '') {
+                $org = $c['org'] ?? null;
+                if (is_array($org) && isset($org['company']) && is_string($org['company']) && trim($org['company']) !== '') {
+                    $display = trim($org['company']);
+                }
+            }
+
+            $phonesRaw = $c['phones'] ?? [];
+            if ($phonesRaw instanceof \stdClass) {
+                $phonesRaw = (array) $phonesRaw;
+            }
+            $phoneRows = [];
+            if (is_array($phonesRaw) && $phonesRaw !== []) {
+                foreach (array_values($phonesRaw) as $ph) {
+                    if (! is_array($ph)) {
+                        continue;
+                    }
+                    $num = $ph['phone'] ?? null;
+                    $wa = $ph['wa_id'] ?? null;
+                    $num = is_string($num) ? trim($num) : null;
+                    $wa = is_string($wa) ? trim($wa) : null;
+                    if ($num === null && $wa === null) {
+                        continue;
+                    }
+                    if ($num === null && $wa !== null) {
+                        $num = $wa;
+                    }
+                    $phoneRows[] = ['phone' => $num, 'wa_id' => $wa];
+                }
+            }
+
+            $emailsRaw = $c['emails'] ?? [];
+            $emails = [];
+            if (is_array($emailsRaw)) {
+                foreach (array_values($emailsRaw) as $em) {
+                    if (is_array($em) && isset($em['email']) && is_string($em['email']) && trim($em['email']) !== '') {
+                        $emails[] = trim($em['email']);
+                    }
+                }
+            }
+
+            $primaryPhone = $phoneRows[0]['phone'] ?? null;
+            $primaryWa = $phoneRows[0]['wa_id'] ?? null;
+
+            if ($display === '' && $primaryPhone === null && $primaryWa === null && $emails === []) {
+                continue;
+            }
+
+            $out[] = [
+                'display_name' => $display,
+                'phone' => $primaryPhone,
+                'wa_id' => $primaryWa,
+                'emails' => $emails,
+                'phones' => $phoneRows,
+            ];
+        }
+
+        if ($out === [] && $rawContacts !== []) {
+            $out[] = [
+                'display_name' => 'Shared contact',
+                'phone' => null,
+                'wa_id' => null,
+                'emails' => [],
+                'phones' => [],
+            ];
+        }
+
+        return $out;
     }
 
     /**

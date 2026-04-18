@@ -352,4 +352,62 @@ class WebhookWhatsAppTest extends TestCase
         $this->assertSame('Jane Customer', $contact->profile_name);
         $this->assertSame('Jane Customer', $contact->name);
     }
+
+    public function test_post_accepts_inbound_shared_contacts_message(): void
+    {
+        Event::fake([NewMessageReceived::class]);
+        $this->metaSettingsRow(['app_secret' => 'top_secret']);
+
+        $payload = [
+            'entry' => [[
+                'changes' => [[
+                    'value' => [
+                        'metadata' => ['display_phone_number' => '+1'],
+                        'messages' => [[
+                            'from' => '15550003333',
+                            'id' => 'wamid.CONTACTS1',
+                            'timestamp' => (string) now()->timestamp,
+                            'type' => 'contacts',
+                            'contacts' => [[
+                                'name' => [
+                                    'first_name' => 'Ada',
+                                    'last_name' => 'Lovelace',
+                                ],
+                                'phones' => [
+                                    'cell' => ['wa_id' => '15551112222', 'type' => 'CELL'],
+                                ],
+                            ]],
+                        ]],
+                    ],
+                ]],
+            ]],
+        ];
+
+        $body = json_encode($payload);
+        $sig = 'sha256='.hash_hmac('sha256', $body, 'top_secret');
+
+        $this->call(
+            'POST',
+            '/api/webhook/whatsapp',
+            [],
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_HUB_SIGNATURE_256' => $sig,
+            ],
+            $body
+        )->assertOk();
+
+        $msg = Message::where('meta_message_id', 'wamid.CONTACTS1')->first();
+        $this->assertNotNull($msg);
+        $this->assertSame('text', $msg->type);
+        $this->assertIsArray($msg->interactive_payload);
+        $this->assertSame('contacts', $msg->interactive_payload['type'] ?? null);
+        $items = $msg->interactive_payload['items'] ?? null;
+        $this->assertIsArray($items);
+        $this->assertNotEmpty($items);
+        $this->assertSame('Ada Lovelace', $items[0]['display_name'] ?? null);
+        $this->assertSame('15551112222', $items[0]['phone'] ?? null);
+    }
 }
