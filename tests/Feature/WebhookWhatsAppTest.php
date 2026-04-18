@@ -150,6 +150,62 @@ class WebhookWhatsAppTest extends TestCase
         Event::assertDispatched(NewMessageReceived::class);
     }
 
+    public function test_post_accepts_inbound_location_message(): void
+    {
+        Event::fake([NewMessageReceived::class]);
+        $this->metaSettingsRow(['app_secret' => 'top_secret']);
+
+        $payload = [
+            'entry' => [[
+                'changes' => [[
+                    'value' => [
+                        'metadata' => ['display_phone_number' => '+1'],
+                        'messages' => [[
+                            'from' => '15557778888',
+                            'id' => 'wamid.LOCATION1',
+                            'timestamp' => (string) now()->timestamp,
+                            'type' => 'location',
+                            'location' => [
+                                'latitude' => 24.7136,
+                                'longitude' => 46.6753,
+                                'name' => 'Riyadh pin',
+                                'address' => 'Sample address',
+                            ],
+                        ]],
+                    ],
+                ]],
+            ]],
+        ];
+
+        $body = json_encode($payload);
+        $sig = 'sha256='.hash_hmac('sha256', $body, 'top_secret');
+
+        $this->call(
+            'POST',
+            '/api/webhook/whatsapp',
+            [],
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_HUB_SIGNATURE_256' => $sig,
+            ],
+            $body
+        )->assertOk();
+
+        $this->assertDatabaseHas('messages', [
+            'meta_message_id' => 'wamid.LOCATION1',
+            'direction' => 'inbound',
+            'type' => 'location',
+            'sender_kind' => 'contact',
+        ]);
+
+        $msg = Message::where('meta_message_id', 'wamid.LOCATION1')->first();
+        $this->assertStringContainsString('Riyadh pin', (string) $msg->content);
+        $this->assertIsArray($msg->interactive_payload);
+        $this->assertSame('location', $msg->interactive_payload['type'] ?? null);
+    }
+
     public function test_post_duplicate_message_id_is_idempotent(): void
     {
         Event::fake([NewMessageReceived::class]);

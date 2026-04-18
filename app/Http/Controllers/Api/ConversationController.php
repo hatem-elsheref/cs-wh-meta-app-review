@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Events\NewMessageReceived;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Message;
@@ -10,17 +9,19 @@ use App\Models\MessageTemplate;
 use App\Jobs\SendOutboundMessage;
 use App\Http\Resources\ConversationResource;
 use App\Http\Resources\MessageResource;
-use App\Services\MetaWhatsAppService;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
 
 class ConversationController extends Controller
 {
-    public function __construct(private MetaWhatsAppService $metaService) {}
-
-    private function queueIsSync(): bool
+    /**
+     * Run Meta send immediately so delivery works without a queue worker (QUEUE_CONNECTION=database).
+     */
+    private function dispatchOutboundNow(int $messageId): Message
     {
-        return (string) config('queue.default') === 'sync';
+        SendOutboundMessage::dispatchSync($messageId);
+
+        return Message::query()->findOrFail($messageId);
     }
 
     private function displayTimezone(Request $request): string
@@ -182,22 +183,14 @@ class ConversationController extends Controller
                 'sent_at' => null,
             ]);
 
-            if ($this->queueIsSync()) {
-                app(SendOutboundMessage::class, ['messageId' => $msg->id])->handle($this->metaService);
-
-                return response()->json([
-                    'message' => 'Template sent successfully',
-                    'meta_message_id' => Message::find($msg->id)?->meta_message_id,
-                ]);
-            }
-
-            SendOutboundMessage::dispatch($msg->id);
+            $msg = $this->dispatchOutboundNow($msg->id);
 
             return response()->json([
-                'message' => 'Template queued',
+                'message' => $msg->status === 'sent' ? 'Template sent successfully' : 'Template failed to send',
                 'id' => $msg->id,
-                'status' => 'queued',
-            ], 202);
+                'status' => $msg->status,
+                'meta_message_id' => $msg->meta_message_id,
+            ]);
         }
 
         $type = $request->input('type', 'text');
@@ -239,21 +232,14 @@ class ConversationController extends Controller
                 'sent_at' => null,
             ]);
 
-            if ($this->queueIsSync()) {
-                app(SendOutboundMessage::class, ['messageId' => $msg->id])->handle($this->metaService);
-                return response()->json([
-                    'message' => 'Interactive list sent successfully',
-                    'meta_message_id' => Message::find($msg->id)?->meta_message_id,
-                ]);
-            }
-
-            SendOutboundMessage::dispatch($msg->id);
+            $msg = $this->dispatchOutboundNow($msg->id);
 
             return response()->json([
-                'message' => 'Interactive list queued',
+                'message' => $msg->status === 'sent' ? 'Interactive list sent successfully' : 'Interactive list failed to send',
                 'id' => $msg->id,
-                'status' => 'queued',
-            ], 202);
+                'status' => $msg->status,
+                'meta_message_id' => $msg->meta_message_id,
+            ]);
         }
 
         if ($type === 'interactive_buttons') {
@@ -291,21 +277,14 @@ class ConversationController extends Controller
                 'sent_at' => null,
             ]);
 
-            if ($this->queueIsSync()) {
-                app(SendOutboundMessage::class, ['messageId' => $msg->id])->handle($this->metaService);
-                return response()->json([
-                    'message' => 'Interactive buttons sent successfully',
-                    'meta_message_id' => Message::find($msg->id)?->meta_message_id,
-                ]);
-            }
-
-            SendOutboundMessage::dispatch($msg->id);
+            $msg = $this->dispatchOutboundNow($msg->id);
 
             return response()->json([
-                'message' => 'Interactive buttons queued',
+                'message' => $msg->status === 'sent' ? 'Interactive buttons sent successfully' : 'Interactive buttons failed to send',
                 'id' => $msg->id,
-                'status' => 'queued',
-            ], 202);
+                'status' => $msg->status,
+                'meta_message_id' => $msg->meta_message_id,
+            ]);
         }
 
         $data = $request->validate([
@@ -326,20 +305,13 @@ class ConversationController extends Controller
             'sent_at' => null,
         ]);
 
-        if ($this->queueIsSync()) {
-            app(SendOutboundMessage::class, ['messageId' => $msg->id])->handle($this->metaService);
-            return response()->json([
-                'message' => 'Message sent successfully',
-                'meta_message_id' => Message::find($msg->id)?->meta_message_id,
-            ]);
-        }
-
-        SendOutboundMessage::dispatch($msg->id);
+        $msg = $this->dispatchOutboundNow($msg->id);
 
         return response()->json([
-            'message' => 'Message queued',
+            'message' => $msg->status === 'sent' ? 'Message sent successfully' : 'Message failed to send',
             'id' => $msg->id,
-            'status' => 'queued',
-        ], 202);
+            'status' => $msg->status,
+            'meta_message_id' => $msg->meta_message_id,
+        ]);
     }
 }

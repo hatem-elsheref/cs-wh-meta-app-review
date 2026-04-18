@@ -262,6 +262,28 @@ class WebhookController extends Controller
             $type = 'sticker';
             $mediaId = $msg['sticker']['id'] ?? null;
             $mediaType = $msg['sticker']['mime_type'] ?? null;
+        } elseif (isset($msg['location'])) {
+            $type = 'location';
+            $loc = $msg['location'];
+            $lines = array_values(array_filter([
+                $loc['name'] ?? null,
+                $loc['address'] ?? null,
+                isset($loc['latitude'], $loc['longitude'])
+                    ? trim((string) $loc['latitude']).', '.trim((string) $loc['longitude'])
+                    : null,
+            ], fn ($v) => $v !== null && trim((string) $v) !== ''));
+            $content = $lines !== [] ? implode("\n", $lines) : null;
+            $interactivePayload = ['type' => 'location', 'location' => $loc];
+        }
+
+        // Meta can send types we do not model yet; coerce to text so MySQL ENUM/VARCHAR never breaks.
+        $persistableTypes = ['text', 'template', 'image', 'audio', 'video', 'document', 'sticker', 'location'];
+        if (! in_array($type, $persistableTypes, true)) {
+            $metaType = $type;
+            $type = 'text';
+            if ($content === null || trim((string) $content) === '') {
+                $content = '['.strtoupper((string) $metaType).']';
+            }
         }
 
         // Ensure we always have a displayable fallback content.
@@ -273,6 +295,7 @@ class WebhookController extends Controller
                 'document' => '[Document]',
                 'sticker' => '[Sticker]',
                 'interactive' => '[Interactive]',
+                'location' => '[Location]',
                 default => '[Message]',
             };
         }
