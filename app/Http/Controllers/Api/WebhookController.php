@@ -90,7 +90,7 @@ class WebhookController extends Controller
                     'signature_prefix_ok' => $sigHeader !== '' && preg_match('/^sha256=/i', $sigHeader) === 1,
                     'meta_app_id' => $settings?->app_id,
                     'app_secret_configured' => is_string($settings?->app_secret) && trim((string) $settings->app_secret) !== '',
-                    'hint' => 'Use the Meta App Secret from developers.facebook.com → Your App → App settings → Basic. Re-save it in Meta settings if you rotated the secret or pasted whitespace.',
+                    'hint' => 'app_secret must match Meta App Secret (App settings → Basic).',
                 ],
                 'http_status' => 403,
             ]);

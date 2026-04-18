@@ -23,7 +23,7 @@ class HealthController extends Controller
 
         $metaConfigured = false;
         try {
-            $metaConfigured = (bool) MetaSetting::query()->value('access_token');
+            $metaConfigured = (bool) MetaSetting::query()->first()?->access_token;
         } catch (\Throwable) {
             $metaConfigured = false;
         }
