@@ -39,6 +39,14 @@ return [
     | Isnaad portal: GET {base_url}/{order_number}
     | Example: https://portal.isnaad.sa/api/order-tracking/2062380
     */
+    /*
+    | External integrations: POST /api/external/whatsapp/templates/*
+    | Send header: X-API-Key: <your key>
+    */
+    'external_whatsapp' => [
+        'api_key' => env('EXTERNAL_WHATSAPP_API_KEY', ''),
+    ],
+
     'isnaad' => [
         // Use ?: so an empty .env value does not wipe the default (env('X','default') keeps '' if X is set blank).
         'order_tracking_base_url' => rtrim(

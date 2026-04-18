@@ -19,6 +19,7 @@ class ContactResource extends JsonResource
             'profile_name' => $this->profile_name,
             'wa_id' => $this->wa_id,
             'opt_in' => $this->opt_in,
+            'created_via' => $this->created_via,
             'created_at' => $this->created_at,
         ];
     }

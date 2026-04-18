@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\MetaWhatsAppService;
+use App\Support\AdminAudit;
 use Illuminate\Http\Request;
 
 class MetaSettingsController extends Controller
@@ -43,6 +44,11 @@ class MetaSettingsController extends Controller
         ]);
 
         $settings = $this->metaService->saveSettings($data);
+
+        AdminAudit::log($request, 'meta_settings.saved', $settings, [
+            'phone_number_id' => $settings->phone_number_id,
+            'waba_id' => $settings->waba_id,
+        ]);
 
         return response()->json([
             'message' => 'Settings saved successfully',

@@ -12,11 +12,14 @@ class Conversation extends Model
         'last_message_at',
         'window_expires_at',
         'status',
+        'unread_inbound_count',
+        'last_read_at',
     ];
 
     protected $casts = [
         'last_message_at' => 'datetime',
         'window_expires_at' => 'datetime',
+        'last_read_at' => 'datetime',
     ];
 
     public function contact()

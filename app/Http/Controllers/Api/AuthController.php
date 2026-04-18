@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\AdminAudit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
@@ -43,6 +44,8 @@ class AuthController extends Controller
 
         $expiresAt = $this->tokenExpiresAt();
         $token = $user->createToken('auth-token', ['*'], $expiresAt)->plainTextToken;
+
+        AdminAudit::log($request, 'auth.login', $user, ['email' => $user->email], $user->id);
 
         return response()->json([
             'user' => $user,
@@ -105,6 +108,8 @@ class AuthController extends Controller
             'role' => 'agent',
             'status' => 'pending',
         ]);
+
+        AdminAudit::log($request, 'auth.register', $user, ['email' => $user->email], $user->id);
 
         return response()->json([
             'message' => 'Registration successful. Your account is under review and requires admin approval.',

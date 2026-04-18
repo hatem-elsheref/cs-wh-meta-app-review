@@ -12,6 +12,7 @@ class Contact extends Model
         'profile_name',
         'wa_id',
         'opt_in',
+        'created_via',
     ];
 
     protected $casts = [

@@ -3,10 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Message;
-use App\Models\WebhookLog;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class MetricsController extends Controller
 {
@@ -35,7 +34,6 @@ class MetricsController extends Controller
             ], 422);
         }
 
-        // If no explicit range was provided, fall back to period.
         if (! $start || ! $end) {
             $start = match ($period) {
                 'week' => $now->startOfWeek(),
@@ -52,38 +50,42 @@ class MetricsController extends Controller
             ], 422);
         }
 
-        $messagesQ = Message::query()->whereBetween('created_at', [$start, $end]);
-        $webhooksQ = WebhookLog::query()->whereBetween('created_at', [$start, $end]);
+        $direction = $request->query('direction');
+        $type = $request->query('type');
+        $statusFilter = $request->query('status');
 
-        $direction = $request->query('direction'); // inbound|outbound
-        $type = $request->query('type'); // text|template|image|...
-        $statusFilter = $request->query('status'); // queued|sent|failed|...
+        $msgQuery = DB::table('messages')
+            ->whereBetween('created_at', [$start, $end]);
 
         if (is_string($direction) && $direction !== '') {
-            $messagesQ->where('direction', $direction);
+            $msgQuery->where('direction', $direction);
         }
         if (is_string($type) && $type !== '') {
-            $messagesQ->where('type', $type);
+            $msgQuery->where('type', $type);
         }
         if (is_string($statusFilter) && $statusFilter !== '') {
-            $messagesQ->where('status', $statusFilter);
+            $msgQuery->where('status', $statusFilter);
         }
 
-        // For “overview” numbers we still break down inbound/outbound from the (filtered) base query.
-        $outbound = (clone $messagesQ)->where('direction', 'outbound');
-        $inbound = (clone $messagesQ)->where('direction', 'inbound');
+        $m = $msgQuery->selectRaw("
+            SUM(CASE WHEN direction = 'inbound' THEN 1 ELSE 0 END) as inbound_total,
+            SUM(CASE WHEN direction = 'outbound' THEN 1 ELSE 0 END) as outbound_total,
+            SUM(CASE WHEN direction = 'outbound' AND type = 'template' THEN 1 ELSE 0 END) as outbound_template_total,
+            SUM(CASE WHEN direction = 'outbound' AND type = 'text' THEN 1 ELSE 0 END) as outbound_text_total,
+            SUM(CASE WHEN direction = 'outbound' AND status = 'queued' THEN 1 ELSE 0 END) as ob_queued,
+            SUM(CASE WHEN direction = 'outbound' AND status = 'sent' THEN 1 ELSE 0 END) as ob_sent,
+            SUM(CASE WHEN direction = 'outbound' AND delivered_at IS NOT NULL THEN 1 ELSE 0 END) as ob_delivered,
+            SUM(CASE WHEN direction = 'outbound' AND read_at IS NOT NULL THEN 1 ELSE 0 END) as ob_read,
+            SUM(CASE WHEN direction = 'outbound' AND status = 'failed' THEN 1 ELSE 0 END) as ob_failed
+        ")->first();
 
-        $sentTotal = (clone $outbound)->count();
-        $templateTotal = (clone $outbound)->where('type', 'template')->count();
-        $freeTextTotal = (clone $outbound)->where('type', 'text')->count();
-
-        $status = [
-            'queued' => (clone $outbound)->where('status', 'queued')->count(),
-            'sent' => (clone $outbound)->where('status', 'sent')->count(),
-            'delivered' => (clone $outbound)->whereNotNull('delivered_at')->count(),
-            'read' => (clone $outbound)->whereNotNull('read_at')->count(),
-            'failed' => (clone $outbound)->where('status', 'failed')->count(),
-        ];
+        $w = DB::table('webhook_logs')
+            ->whereBetween('created_at', [$start, $end])
+            ->selectRaw("
+                SUM(CASE WHEN direction = 'inbound' THEN 1 ELSE 0 END) as incoming_total,
+                SUM(CASE WHEN event_type = 'message_status' THEN 1 ELSE 0 END) as status_updates_total,
+                SUM(CASE WHEN event_type = 'message_received' THEN 1 ELSE 0 END) as received_messages_total
+            ")->first();
 
         return response()->json([
             'period' => $period,
@@ -92,18 +94,23 @@ class MetricsController extends Controller
                 'end_utc' => $end->toIso8601String(),
             ],
             'messages' => [
-                'inbound_total' => $inbound->count(),
-                'outbound_total' => $sentTotal,
-                'outbound_template_total' => $templateTotal,
-                'outbound_text_total' => $freeTextTotal,
-                'outbound_status' => $status,
+                'inbound_total' => (int) ($m->inbound_total ?? 0),
+                'outbound_total' => (int) ($m->outbound_total ?? 0),
+                'outbound_template_total' => (int) ($m->outbound_template_total ?? 0),
+                'outbound_text_total' => (int) ($m->outbound_text_total ?? 0),
+                'outbound_status' => [
+                    'queued' => (int) ($m->ob_queued ?? 0),
+                    'sent' => (int) ($m->ob_sent ?? 0),
+                    'delivered' => (int) ($m->ob_delivered ?? 0),
+                    'read' => (int) ($m->ob_read ?? 0),
+                    'failed' => (int) ($m->ob_failed ?? 0),
+                ],
             ],
             'webhooks' => [
-                'incoming_total' => (clone $webhooksQ)->where('direction', 'inbound')->count(),
-                'status_updates_total' => (clone $webhooksQ)->where('event_type', 'message_status')->count(),
-                'received_messages_total' => (clone $webhooksQ)->where('event_type', 'message_received')->count(),
+                'incoming_total' => (int) ($w->incoming_total ?? 0),
+                'status_updates_total' => (int) ($w->status_updates_total ?? 0),
+                'received_messages_total' => (int) ($w->received_messages_total ?? 0),
             ],
         ]);
     }
 }
-

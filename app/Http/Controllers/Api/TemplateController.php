@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\MessageTemplate;
 use App\Services\MetaWhatsAppService;
+use App\Support\AdminAudit;
+use Illuminate\Http\Request;
 
 class TemplateController extends Controller
 {
@@ -21,11 +23,15 @@ class TemplateController extends Controller
         ]);
     }
 
-    public function sync()
+    public function sync(Request $request)
     {
         $result = $this->metaService->syncTemplates();
 
         if ($result['success']) {
+            AdminAudit::log($request, 'templates.synced', null, [
+                'synced' => $result['synced'] ?? 0,
+            ]);
+
             return response()->json([
                 'message' => "Synced {$result['synced']} templates successfully",
             ]);

@@ -11,6 +11,8 @@ class Message extends Model
         'contact_id',
         'meta_message_id',
         'direction',
+        'sender_kind',
+        'sent_by_user_id',
         'type',
         'content',
         'template_name',
@@ -41,5 +43,10 @@ class Message extends Model
     public function contact()
     {
         return $this->belongsTo(Contact::class);
+    }
+
+    public function sentByUser()
+    {
+        return $this->belongsTo(User::class, 'sent_by_user_id');
     }
 }

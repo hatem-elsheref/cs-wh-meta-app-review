@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Flow;
+use App\Support\AdminAudit;
 use Illuminate\Http\Request;
 
 class FlowController extends Controller
@@ -64,6 +65,11 @@ class FlowController extends Controller
         $flow->nodes_json = $data['nodes'];
         $flow->edges_json = $data['edges'];
         $flow->save();
+
+        AdminAudit::log($request, 'flow.updated', $flow, [
+            'nodes_count' => count($data['nodes']),
+            'edges_count' => count($data['edges']),
+        ]);
 
         return response()->json([
             'message' => 'Flow saved',

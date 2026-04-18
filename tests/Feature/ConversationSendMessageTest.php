@@ -32,7 +32,7 @@ class ConversationSendMessageTest extends TestCase
 
     public function test_free_text_send_when_window_open_calls_meta_and_creates_message(): void
     {
-        $this->actingUser();
+        $user = $this->actingUser();
 
         $this->instance(MetaWhatsAppService::class, Mockery::mock(MetaWhatsAppService::class, function ($mock) {
             $mock->shouldReceive('sendMessage')->once()->with('966500000000', 'Hello agent')->andReturn([
@@ -59,6 +59,8 @@ class ConversationSendMessageTest extends TestCase
             'conversation_id' => $conversation->id,
             'meta_message_id' => 'out_mid_1',
             'direction' => 'outbound',
+            'sender_kind' => 'agent',
+            'sent_by_user_id' => $user->id,
             'content' => 'Hello agent',
         ]);
     }
@@ -79,7 +81,7 @@ class ConversationSendMessageTest extends TestCase
         ]);
 
         $response->assertStatus(422);
-        $response->assertJsonValidationErrors(['template_name']);
+        $response->assertJsonValidationErrors(['template_name'], 'details');
     }
 
     public function test_interactive_list_send_validates_sections(): void

@@ -29,6 +29,9 @@ class ConversationResource extends JsonResource
             'last_message_at_local' => $this->last_message_at?->copy()->timezone($tz)->toISOString(),
             'window_expires_at' => $this->window_expires_at,
             'window_expires_at_local' => $this->window_expires_at?->copy()->timezone($tz)->toISOString(),
+            'unread_inbound_count' => (int) ($this->unread_inbound_count ?? 0),
+            'last_read_at' => $this->last_read_at,
+            'last_read_at_local' => $this->last_read_at?->copy()->timezone($tz)->toISOString(),
         ];
     }
 }

@@ -15,5 +15,9 @@ class AiSetting extends Model
         'default_tone',
         'system_prompt',
     ];
+
+    protected $casts = [
+        'api_key' => 'encrypted',
+    ];
 }
 

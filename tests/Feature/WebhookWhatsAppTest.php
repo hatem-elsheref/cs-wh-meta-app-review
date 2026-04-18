@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Events\MessageStatusUpdated;
 use App\Events\NewMessageReceived;
 use App\Models\Contact;
 use App\Models\Conversation;
@@ -121,25 +122,129 @@ class WebhookWhatsAppTest extends TestCase
         $response->assertOk();
         $response->assertJsonFragment(['status' => 'processed']);
 
-        $this->assertDatabaseHas('contacts', ['phone_number' => '15551234567']);
+        $this->assertDatabaseHas('contacts', [
+            'phone_number' => '15551234567',
+            'created_via' => 'whatsapp_inbound',
+        ]);
         $contact = Contact::where('phone_number', '15551234567')->first();
         $this->assertNotNull($contact);
 
         $conversation = Conversation::where('contact_id', $contact->id)->first();
         $this->assertNotNull($conversation);
+        $conversation->refresh();
         $this->assertNotNull($conversation->window_expires_at);
         $this->assertTrue($conversation->window_expires_at->isFuture());
+        $this->assertSame(1, (int) $conversation->unread_inbound_count);
 
         $this->assertDatabaseHas('messages', [
             'conversation_id' => $conversation->id,
             'meta_message_id' => 'wamid.UNITTEST',
             'direction' => 'inbound',
+            'sender_kind' => 'contact',
         ]);
 
         $msg = Message::where('meta_message_id', 'wamid.UNITTEST')->first();
         $this->assertSame('Hello from test', $msg->content);
+        $this->assertNull($msg->sent_by_user_id);
 
         Event::assertDispatched(NewMessageReceived::class);
+    }
+
+    public function test_post_duplicate_message_id_is_idempotent(): void
+    {
+        Event::fake([NewMessageReceived::class]);
+        $this->metaSettingsRow(['app_secret' => 'top_secret']);
+
+        $payload = [
+            'entry' => [[
+                'changes' => [[
+                    'value' => [
+                        'metadata' => ['display_phone_number' => '+1'],
+                        'messages' => [[
+                            'from' => '15550001111',
+                            'id' => 'wamid.DEDUPTEST',
+                            'timestamp' => (string) now()->timestamp,
+                            'type' => 'text',
+                            'text' => ['body' => 'Once'],
+                        ]],
+                    ],
+                ]],
+            ]],
+        ];
+
+        $body = json_encode($payload);
+        $sig = 'sha256='.hash_hmac('sha256', $body, 'top_secret');
+        $headers = [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_HUB_SIGNATURE_256' => $sig,
+        ];
+
+        $this->call('POST', '/api/webhook/whatsapp', [], [], [], $headers, $body)->assertOk();
+        $this->call('POST', '/api/webhook/whatsapp', [], [], [], $headers, $body)->assertOk();
+
+        $this->assertSame(1, Message::query()->where('meta_message_id', 'wamid.DEDUPTEST')->count());
+        Event::assertDispatchedTimes(NewMessageReceived::class, 1);
+
+        $contact = Contact::where('phone_number', '15550001111')->first();
+        $conversation = Conversation::where('contact_id', $contact->id)->first();
+        $conversation->refresh();
+        $this->assertSame(1, (int) $conversation->unread_inbound_count);
+    }
+
+    public function test_status_update_is_idempotent_for_repeat_read(): void
+    {
+        Event::fake([MessageStatusUpdated::class]);
+        $this->metaSettingsRow(['app_secret' => 'top_secret']);
+
+        $contact = Contact::create(['phone_number' => '15550002222']);
+        $conversation = Conversation::create([
+            'contact_id' => $contact->id,
+            'status' => 'open',
+            'window_expires_at' => now()->addHour(),
+        ]);
+        $message = Message::create([
+            'conversation_id' => $conversation->id,
+            'contact_id' => $contact->id,
+            'meta_message_id' => 'wamid.STATUSDUP',
+            'direction' => 'outbound',
+            'sender_kind' => 'system',
+            'type' => 'text',
+            'content' => 'Hi',
+            'status' => 'sent',
+            'sent_at' => now(),
+            'read_at' => now(),
+        ]);
+
+        $payload = [
+            'entry' => [[
+                'changes' => [[
+                    'value' => [
+                        'statuses' => [[
+                            'id' => 'wamid.STATUSDUP',
+                            'status' => 'read',
+                            'timestamp' => (string) now()->timestamp,
+                        ]],
+                    ],
+                ]],
+            ]],
+        ];
+
+        $body = json_encode($payload);
+        $sig = 'sha256='.hash_hmac('sha256', $body, 'top_secret');
+        $this->call(
+            'POST',
+            '/api/webhook/whatsapp',
+            [],
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_HUB_SIGNATURE_256' => $sig,
+            ],
+            $body
+        )->assertOk();
+
+        Event::assertNotDispatched(MessageStatusUpdated::class);
     }
 
     public function test_post_syncs_profile_name_from_contacts_payload(): void

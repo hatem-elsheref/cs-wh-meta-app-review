@@ -7,6 +7,7 @@ use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\Integrations\Whatsapp\MetaSender;
+use App\Support\AdminAudit;
 use Illuminate\Http\Request;
 
 class WhatsAppTemplateController extends Controller
@@ -25,7 +26,9 @@ class WhatsAppTemplateController extends Controller
 
         $result = $this->sender->sendTemplate($data['phone_number'], $data['template'], $data['params'] ?? []);
 
-        $messageId = $this->persist($data['phone_number'], $data['template'], $data['params'] ?? [], $result);
+        $messageId = $this->persist($request, $data['phone_number'], $data['template'], $data['params'] ?? [], $result);
+
+        $this->auditTemplateSend($request, $data['template'], 1, (bool) ($result['status'] ?? false));
 
         return response()->json([
             'status' => (bool) ($result['status'] ?? false),
@@ -49,8 +52,15 @@ class WhatsAppTemplateController extends Controller
 
         $saved = [];
         foreach ($result['results'] ?? [] as $phone => $one) {
-            $saved[$phone] = $this->persist((string) $phone, $data['template'], $data['params'] ?? [], $one);
+            $saved[$phone] = $this->persist($request, (string) $phone, $data['template'], $data['params'] ?? [], $one);
         }
+
+        $this->auditTemplateSend(
+            $request,
+            $data['template'],
+            count($data['phone_numbers']),
+            (bool) ($result['status'] ?? false)
+        );
 
         return response()->json([
             'status' => (bool) ($result['status'] ?? false),
@@ -64,9 +74,12 @@ class WhatsAppTemplateController extends Controller
      *
      * @param  array<int, array{name?:string|int, value?:mixed}>  $params
      */
-    private function persist(string $phone, string $template, array $params, array $sendResult): int
+    private function persist(Request $request, string $phone, string $template, array $params, array $sendResult): int
     {
-        $contact = Contact::query()->firstOrCreate(['phone_number' => $phone], ['opt_in' => true]);
+        $contact = Contact::query()->firstOrCreate(
+            ['phone_number' => $phone],
+            ['opt_in' => true, 'created_via' => 'integration']
+        );
         $conversation = Conversation::query()->firstOrCreate(
             ['contact_id' => $contact->id],
             ['status' => 'open', 'window_expires_at' => null]
@@ -79,11 +92,16 @@ class WhatsAppTemplateController extends Controller
             $metaId = $sendResult['response']['messages'][0]['id'] ?? null;
         }
 
+        $user = $request->user();
+        $senderKind = $user ? 'agent' : 'integration';
+
         $msg = Message::create([
             'conversation_id' => $conversation->id,
             'contact_id' => $contact->id,
             'meta_message_id' => is_string($metaId) ? $metaId : null,
             'direction' => 'outbound',
+            'sender_kind' => $senderKind,
+            'sent_by_user_id' => $user?->id,
             'type' => 'template',
             'content' => $template,
             'template_name' => $template,
@@ -101,6 +119,19 @@ class WhatsAppTemplateController extends Controller
         ]);
 
         return (int) $msg->id;
+    }
+
+    private function auditTemplateSend(Request $request, string $template, int $recipientCount, bool $metaOk): void
+    {
+        $via = $request->user() ? 'admin' : 'external_api';
+        $action = $via === 'admin' ? 'whatsapp.template_send' : 'external.whatsapp.template_send';
+
+        AdminAudit::log($request, $action, null, [
+            'via' => $via,
+            'template' => $template,
+            'recipients' => $recipientCount,
+            'meta_ok' => $metaOk,
+        ]);
     }
 }
 

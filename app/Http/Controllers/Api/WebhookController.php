@@ -148,6 +148,16 @@ class WebhookController extends Controller
     {
         $phoneNumber = $msg['from'];
         $waId = $msg['id'];
+        $metaMessageId = is_string($waId) ? $waId : (is_scalar($waId) ? (string) $waId : '');
+        if ($metaMessageId === '') {
+            return;
+        }
+
+        // Meta may retry webhooks; skip duplicate deliveries by message id.
+        if (Message::query()->where('meta_message_id', $metaMessageId)->exists()) {
+            return;
+        }
+
         // Meta sends unix timestamps (UTC). Keep all window logic in UTC.
         $timestamp = isset($msg['timestamp'])
             ? Carbon::createFromTimestampUTC((int) $msg['timestamp'])
@@ -156,7 +166,7 @@ class WebhookController extends Controller
 
         $contact = Contact::firstOrCreate(
             ['phone_number' => $phoneNumber],
-            ['wa_id' => $waId]
+            ['wa_id' => $waId, 'created_via' => 'whatsapp_inbound']
         );
 
         $profileName = $this->extractWhatsAppProfileName($value['contacts'] ?? [], $phoneNumber);
@@ -248,8 +258,10 @@ class WebhookController extends Controller
         $message = Message::create([
             'conversation_id' => $conversation->id,
             'contact_id' => $contact->id,
-            'meta_message_id' => $waId,
+            'meta_message_id' => $metaMessageId,
             'direction' => 'inbound',
+            'sender_kind' => 'contact',
+            'sent_by_user_id' => null,
             'type' => $type,
             'content' => $content,
             'interactive_payload' => $interactivePayload,
@@ -259,6 +271,8 @@ class WebhookController extends Controller
             'status' => 'received',
             'sent_at' => $timestamp,
         ]);
+
+        $conversation->increment('unread_inbound_count');
 
         // Queue-compatible: in sync mode it runs immediately, in database/redis it runs async.
         ProcessIncomingMessage::dispatch($message->id);
@@ -297,7 +311,7 @@ class WebhookController extends Controller
         $metaMessageId = $status['id'] ?? null;
         $messageStatus = $status['status'] ?? null;
 
-        if (! $metaMessageId) {
+        if (! $metaMessageId || ! is_string($messageStatus) || $messageStatus === '') {
             return;
         }
 
@@ -309,22 +323,33 @@ class WebhookController extends Controller
         $updates = [];
         switch ($messageStatus) {
             case 'sent':
-                $updates['sent_at'] = now();
+                if ($message->sent_at === null) {
+                    $updates['sent_at'] = now();
+                }
                 break;
             case 'delivered':
-                $updates['delivered_at'] = now();
+                if ($message->delivered_at === null) {
+                    $updates['delivered_at'] = now();
+                }
                 break;
             case 'read':
-                $updates['read_at'] = now();
+                if ($message->read_at === null) {
+                    $updates['read_at'] = now();
+                }
                 break;
             case 'failed':
-                $updates['status'] = 'failed';
+                if ($message->status !== 'failed') {
+                    $updates['status'] = 'failed';
+                }
                 break;
         }
 
-        if (! empty($updates)) {
-            $message->update($updates);
-            event(new MessageStatusUpdated($message));
+        if ($updates === []) {
+            return;
         }
+
+        $message->update($updates);
+        $message->refresh();
+        event(new MessageStatusUpdated($message));
     }
 }

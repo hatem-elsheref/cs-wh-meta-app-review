@@ -24,6 +24,8 @@ class NewMessageReceived implements ShouldBroadcast
 
     public function broadcastWith(): array
     {
+        $this->message->loadMissing('sentByUser');
+
         $conversation = $this->message->relationLoaded('conversation')
             ? $this->message->conversation
             : $this->message->conversation()->first();
@@ -33,6 +35,8 @@ class NewMessageReceived implements ShouldBroadcast
             $remaining = now('UTC')->diffInSeconds($conversation->window_expires_at, false);
         }
 
+        $sentBy = $this->message->sentByUser;
+
         return [
             'id' => $this->message->id,
             'conversation_id' => $this->message->conversation_id,
@@ -40,6 +44,11 @@ class NewMessageReceived implements ShouldBroadcast
             'content' => $this->message->content,
             'type' => $this->message->type,
             'direction' => $this->message->direction,
+            'sender_kind' => $this->message->sender_kind,
+            'sent_by_user_id' => $this->message->sent_by_user_id,
+            'sent_by_user' => $sentBy
+                ? ['id' => $sentBy->id, 'name' => $sentBy->name, 'email' => $sentBy->email]
+                : null,
             'created_at' => $this->message->created_at->toIso8601String(),
             // Include 24h window state so UI can remove "expired" hint immediately.
             'window_open' => $conversation?->isWindowOpen(),

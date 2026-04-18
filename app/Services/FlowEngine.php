@@ -928,7 +928,10 @@ class FlowEngine
      */
     private function persistOutbound(string $phone, array $attrs): void
     {
-        $contact = Contact::query()->firstOrCreate(['phone_number' => $phone], ['opt_in' => true]);
+        $contact = Contact::query()->firstOrCreate(
+            ['phone_number' => $phone],
+            ['opt_in' => true, 'created_via' => 'flow']
+        );
 
         $conversation = Conversation::query()->firstOrCreate(
             ['contact_id' => $contact->id],
@@ -945,6 +948,8 @@ class FlowEngine
             'contact_id' => $contact->id,
             'meta_message_id' => $attrs['meta_message_id'] ?? null,
             'direction' => 'outbound',
+            'sender_kind' => 'system',
+            'sent_by_user_id' => null,
             'type' => $attrs['type'] ?? 'text',
             'content' => $attrs['content'] ?? null,
             'interactive_payload' => $attrs['interactive_payload'] ?? null,

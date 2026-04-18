@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AiSetting;
+use App\Support\AdminAudit;
 use Illuminate\Http\Request;
 
 class AiSettingsController extends Controller
@@ -41,6 +42,11 @@ class AiSettingsController extends Controller
         $s = AiSetting::query()->first() ?: new AiSetting();
         $s->fill($data);
         $s->save();
+
+        AdminAudit::log($request, 'ai_settings.saved', $s, [
+            'provider' => $s->provider,
+            'model' => $s->model,
+        ]);
 
         return response()->json([
             'message' => 'AI settings saved',

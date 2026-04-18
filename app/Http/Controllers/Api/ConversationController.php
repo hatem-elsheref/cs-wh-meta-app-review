@@ -35,9 +35,27 @@ class ConversationController extends Controller
 
     public function index(Request $request)
     {
-        $conversations = Conversation::with('contact')
-            ->orderBy('last_message_at', 'desc')
-            ->paginate(20);
+        $perPage = min(max((int) $request->query('per_page', 20), 1), 100);
+
+        $query = Conversation::with('contact')->orderByDesc('last_message_at');
+
+        if ($request->filled('search')) {
+            $search = trim((string) $request->query('search'));
+            $digits = preg_replace('/\D+/', '', $search);
+
+            $query->whereHas('contact', function ($q) use ($search, $digits) {
+                $q->where(function ($inner) use ($search, $digits) {
+                    $inner->where('phone_number', 'like', '%'.$search.'%')
+                        ->orWhere('name', 'like', '%'.$search.'%')
+                        ->orWhere('profile_name', 'like', '%'.$search.'%');
+                    if ($digits !== '') {
+                        $inner->orWhere('phone_number', 'like', '%'.$digits.'%');
+                    }
+                });
+            });
+        }
+
+        $conversations = $query->paginate($perPage);
 
         return response()->json([
             'data' => ConversationResource::collection($conversations->getCollection()),
@@ -70,15 +88,24 @@ class ConversationController extends Controller
 
     public function show(int $id)
     {
-        $conversation = Conversation::with(['contact', 'messages' => function ($q) {
-            $q->orderBy('created_at', 'desc')->orderBy('id', 'desc')->limit(50);
-        }])->findOrFail($id);
+        $conversation = Conversation::with('contact')->findOrFail($id);
 
         return response()->json([
-            'data' => [
-                'conversation' => new ConversationResource($conversation),
-                'messages' => MessageResource::collection($conversation->messages),
-            ],
+            'data' => new ConversationResource($conversation),
+        ]);
+    }
+
+    public function markAsRead(int $id)
+    {
+        $conversation = Conversation::with('contact')->findOrFail($id);
+
+        $conversation->forceFill([
+            'unread_inbound_count' => 0,
+            'last_read_at' => now(),
+        ])->save();
+
+        return response()->json([
+            'data' => new ConversationResource($conversation->fresh(['contact'])),
         ]);
     }
 
@@ -87,6 +114,7 @@ class ConversationController extends Controller
         $conversation = Conversation::findOrFail($id);
 
         $messages = Message::where('conversation_id', $id)
+            ->with('sentByUser')
             ->orderBy('created_at', 'desc')
             ->orderBy('id', 'desc')
             ->paginate(50);
@@ -138,11 +166,14 @@ class ConversationController extends Controller
                 }
             }
 
+            $user = $request->user();
             $msg = Message::create([
                 'conversation_id' => $conversation->id,
                 'contact_id' => $conversation->contact->id,
                 'meta_message_id' => null,
                 'direction' => 'outbound',
+                'sender_kind' => 'agent',
+                'sent_by_user_id' => $user?->id,
                 'type' => 'template',
                 'content' => $content,
                 'template_name' => $data['template_name'],
@@ -193,11 +224,14 @@ class ConversationController extends Controller
                 ],
             ];
 
+            $user = $request->user();
             $msg = Message::create([
                 'conversation_id' => $conversation->id,
                 'contact_id' => $conversation->contact->id,
                 'meta_message_id' => null,
                 'direction' => 'outbound',
+                'sender_kind' => 'agent',
+                'sent_by_user_id' => $user?->id,
                 'type' => 'text',
                 'content' => $data['body'],
                 'interactive_payload' => $interactive,
@@ -242,11 +276,14 @@ class ConversationController extends Controller
                 ],
             ];
 
+            $user = $request->user();
             $msg = Message::create([
                 'conversation_id' => $conversation->id,
                 'contact_id' => $conversation->contact->id,
                 'meta_message_id' => null,
                 'direction' => 'outbound',
+                'sender_kind' => 'agent',
+                'sent_by_user_id' => $user?->id,
                 'type' => 'text',
                 'content' => $data['body'],
                 'interactive_payload' => $interactive,
@@ -275,11 +312,14 @@ class ConversationController extends Controller
             'message' => 'required|string',
         ]);
 
+        $user = $request->user();
         $msg = Message::create([
             'conversation_id' => $conversation->id,
             'contact_id' => $conversation->contact->id,
             'meta_message_id' => null,
             'direction' => 'outbound',
+            'sender_kind' => 'agent',
+            'sent_by_user_id' => $user?->id,
             'type' => 'text',
             'content' => $data['message'],
             'status' => 'queued',

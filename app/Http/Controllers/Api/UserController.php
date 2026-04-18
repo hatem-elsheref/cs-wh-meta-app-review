@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Support\AdminAudit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
@@ -66,6 +67,8 @@ class UserController extends Controller
             'status' => 'approved',
         ]);
 
+        AdminAudit::log($request, 'user.created', $user, ['email' => $user->email, 'role' => $user->role]);
+
         return response()->json([
             'message' => 'User created successfully',
             'user' => new UserResource($user),
@@ -104,19 +107,23 @@ class UserController extends Controller
 
         $user->update($data);
 
+        AdminAudit::log($request, 'user.updated', $user, ['email' => $user->email]);
+
         return response()->json([
             'message' => 'User updated successfully',
             'user' => new UserResource($user),
         ]);
     }
 
-    public function destroy(int $id)
+    public function destroy(Request $request, int $id)
     {
         $user = User::findOrFail($id);
         if ($resp = $this->ensureNotAdmin($user)) {
             return $resp;
         }
-        
+
+        AdminAudit::log($request, 'user.deleted', $user, ['email' => $user->email]);
+
         $user->delete();
 
         return response()->json([
@@ -124,7 +131,7 @@ class UserController extends Controller
         ]);
     }
 
-    public function approve(int $id)
+    public function approve(Request $request, int $id)
     {
         $user = User::findOrFail($id);
         if ($resp = $this->ensureNotAdmin($user)) {
@@ -132,20 +139,24 @@ class UserController extends Controller
         }
         $user->update(['status' => 'approved']);
 
+        AdminAudit::log($request, 'user.approved', $user, ['email' => $user->email]);
+
         return response()->json([
             'message' => 'User approved successfully',
             'user' => new UserResource($user),
         ]);
     }
 
-    public function reject(int $id)
+    public function reject(Request $request, int $id)
     {
         $user = User::findOrFail($id);
         if ($resp = $this->ensureNotAdmin($user)) {
             return $resp;
         }
-        
+
         $user->update(['status' => 'rejected']);
+
+        AdminAudit::log($request, 'user.rejected', $user, ['email' => $user->email]);
 
         return response()->json([
             'message' => 'User rejected successfully',

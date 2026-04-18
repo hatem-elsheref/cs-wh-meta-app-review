@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\MetaSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class HealthController extends Controller
 {
@@ -20,7 +21,21 @@ class HealthController extends Controller
             $dbError = $e->getMessage();
         }
 
-        $metaConfigured = (bool) MetaSetting::query()->value('access_token');
+        $metaConfigured = false;
+        try {
+            $metaConfigured = (bool) MetaSetting::query()->value('access_token');
+        } catch (\Throwable) {
+            $metaConfigured = false;
+        }
+
+        $failedJobsCount = null;
+        if ($dbOk && Schema::hasTable('failed_jobs')) {
+            try {
+                $failedJobsCount = (int) DB::table('failed_jobs')->count();
+            } catch (\Throwable) {
+                $failedJobsCount = null;
+            }
+        }
 
         $ok = $dbOk;
 
@@ -29,7 +44,10 @@ class HealthController extends Controller
             'checks' => [
                 'db' => ['ok' => $dbOk, 'error' => $dbError],
                 'meta_configured' => ['ok' => $metaConfigured],
-                'queue' => ['connection' => config('queue.default')],
+                'queue' => [
+                    'connection' => config('queue.default'),
+                    'failed_jobs' => $failedJobsCount,
+                ],
             ],
         ], $ok ? 200 : 503);
     }

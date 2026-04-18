@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\AiSettingsController;
 use App\Http\Controllers\Api\ContactController;
@@ -16,14 +17,19 @@ use App\Http\Controllers\Api\WebhookLogController;
 use App\Http\Controllers\Api\WhatsAppTemplateController;
 use Illuminate\Support\Facades\Route;
 
-Route::post('/login', [AuthController::class, 'login']);
-Route::post('/register', [AuthController::class, 'register']);
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
+Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:login');
 
-Route::get('/webhook/whatsapp', [WebhookController::class, 'verify']);
-Route::post('/webhook/whatsapp', [WebhookController::class, 'handle']);
+Route::get('/webhook/whatsapp', [WebhookController::class, 'verify'])->middleware('throttle:webhook-whatsapp');
+Route::post('/webhook/whatsapp', [WebhookController::class, 'handle'])->middleware('throttle:webhook-whatsapp');
 Route::get('/health', HealthController::class);
 
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['throttle:external-whatsapp', 'external.api'])->prefix('external/whatsapp')->group(function () {
+    Route::post('/templates/send', [WhatsAppTemplateController::class, 'send']);
+    Route::post('/templates/send-multiple', [WhatsAppTemplateController::class, 'sendMultiple']);
+});
+
+Route::middleware(['auth:sanctum', 'throttle:api-authenticated'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/refresh', [AuthController::class, 'refresh']);
     Route::get('/me', [AuthController::class, 'me']);
@@ -41,6 +47,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{id}/approve', [UserController::class, 'approve']);
         Route::post('/{id}/reject', [UserController::class, 'reject']);
     })->middleware('admin');
+
+    Route::get('/audit-logs', [AuditLogController::class, 'index'])->middleware('admin');
 
     Route::prefix('settings')->group(function () {
         Route::get('/', [MetaSettingsController::class, 'index']);
@@ -75,6 +83,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [ConversationController::class, 'index']);
         Route::post('/', [ConversationController::class, 'store']);
         Route::get('/{id}', [ConversationController::class, 'show']);
+        Route::post('/{id}/mark-read', [ConversationController::class, 'markAsRead']);
         Route::get('/{id}/messages', [ConversationController::class, 'messages']);
         Route::post('/{id}/send', [ConversationController::class, 'sendMessage']);
     });
