@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
+use App\Models\ConversationState;
 use App\Models\Message;
 use App\Models\MessageTemplate;
 use App\Jobs\SendOutboundMessage;
@@ -58,6 +59,29 @@ class ConversationController extends Controller
 
         $conversations = $query->paginate($perPage);
 
+        // Attach automation mode (auto/manual) from conversation_states keyed by contact phone.
+        // This avoids extra API calls from the UI and keeps the inbox list informative.
+        $phones = $conversations->getCollection()
+            ->map(fn ($c) => $c->contact?->phone_number)
+            ->filter(fn ($p) => is_string($p) && trim($p) !== '')
+            ->map(fn ($p) => trim((string) $p))
+            ->values()
+            ->all();
+
+        $modesByPhone = $phones !== []
+            ? ConversationState::query()
+                ->whereIn('phone', $phones)
+                ->pluck('mode', 'phone')
+                ->all()
+            : [];
+
+        $conversations->getCollection()->transform(function ($c) use ($modesByPhone) {
+            $phone = $c->contact?->phone_number;
+            $phone = is_string($phone) ? trim($phone) : '';
+            $c->setAttribute('automation_mode', $phone !== '' ? ($modesByPhone[$phone] ?? null) : null);
+            return $c;
+        });
+
         return response()->json([
             'data' => ConversationResource::collection($conversations->getCollection()),
             'meta' => [
@@ -90,6 +114,17 @@ class ConversationController extends Controller
     public function show(int $id)
     {
         $conversation = Conversation::with('contact')->findOrFail($id);
+
+        $phone = $conversation->contact?->phone_number;
+        $phone = is_string($phone) ? trim($phone) : '';
+        if ($phone !== '') {
+            $conversation->setAttribute(
+                'automation_mode',
+                ConversationState::query()->where('phone', $phone)->value('mode')
+            );
+        } else {
+            $conversation->setAttribute('automation_mode', null);
+        }
 
         return response()->json([
             'data' => new ConversationResource($conversation),

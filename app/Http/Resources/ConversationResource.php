@@ -32,6 +32,7 @@ class ConversationResource extends JsonResource
             'unread_inbound_count' => (int) ($this->unread_inbound_count ?? 0),
             'last_read_at' => $this->last_read_at,
             'last_read_at_local' => $this->last_read_at?->copy()->timezone($tz)->toISOString(),
+            'automation_mode' => $this->automation_mode ?? null,
         ];
     }
 }
